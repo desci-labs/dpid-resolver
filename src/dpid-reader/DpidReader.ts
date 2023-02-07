@@ -38,6 +38,7 @@ export const convertHexTo64PID = (hex: string, hexToBytes: any) => {
   return base64SafePID;
 };
 
+const DEFAULT_IPFS_GATEWAY = "https://ipfs.desci.com/ipfs";
 
 // the value of string "beta" in bytes32 encoded as hex
 const PREFIX_HARDCODE_BETA = "0x6265746100000000000000000000000000000000000000000000000000000000";
@@ -138,6 +139,10 @@ export class DpidReader {
 
     console.log("got target", targetVersion)
 
+    if (!targetVersion || !targetVersion.cid) {
+      throw new Error("incorrect version, to get the first version use either 'v1' or '0', to get the second version use either 'v2' or '1', to get the latest, don't pass any suffix");
+    }
+
     const targetCid = hexToCid(targetVersion.cid);
 
     console.log("targetCid", targetCid);
@@ -145,7 +150,8 @@ export class DpidReader {
     // const redir = `https://nodes.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join('/')}`
     // console.log("[dpid:resolve]", output);
     // return redir;
-    throw new Error("nodes resolution fail")
+    // throw new Error("nodes resolution fail")
+    return `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
   }
 
   static transform = async (result: DpidResult, request: DpidRequest) => {
