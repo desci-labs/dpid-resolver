@@ -46,7 +46,7 @@ app.get("/*", async (req: Request, res: Response) => {
     const redir = await DpidReader.transform(dpidResult, dpidRequest);
     // res.send({ output, redir });
     if (dpidRequest.jsonld) {
-      res.send(redir);
+      res.setHeader("Content-Type", "application/ld+json").send(redir);
       return;
     }
     res.redirect(redir as string);
