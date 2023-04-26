@@ -27,6 +27,7 @@ app.get("/*", async (req: Request, res: Response) => {
       throw new Error("dpid not specified, pass dpid as route path");
     }
     const isRaw = Object.keys(req.query).indexOf("raw") > -1;
+    const isJsonld = Object.keys(req.query).indexOf("jsonld") > -1;
     const [version, suffix] = extras
       ? [extras[0], extras.slice(1).join("/")]
       : [];
@@ -36,6 +37,7 @@ app.get("/*", async (req: Request, res: Response) => {
       suffix,
       prefix,
       raw: isRaw,
+      jsonld: isJsonld,
     };
     const dpidResult = await DpidReader.read(dpidRequest);
     if (dpidResult.id16 == "0x0") {
@@ -43,7 +45,11 @@ app.get("/*", async (req: Request, res: Response) => {
     }
     const redir = await DpidReader.transform(dpidResult, dpidRequest);
     // res.send({ output, redir });
-    res.redirect(redir);
+    if (dpidRequest.jsonld) {
+      res.send(redir);
+      return;
+    }
+    res.redirect(redir as string);
   } catch (err) {
     res.status(400).send({
       error: (err as any).message,

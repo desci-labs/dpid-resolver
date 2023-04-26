@@ -7,6 +7,8 @@ import { encode, decode } from "url-safe-base64";
 import { getIndexedResearchObjects } from "./TheGraphResolver";
 import { base16 } from "multiformats/bases/base16";
 import { CID } from "multiformats/cid";
+import axios from "axios";
+import { RoCrateTransformer } from "@desci-labs/desci-models";
 
 export interface DpidRequest {
   dpid: string;
@@ -14,6 +16,7 @@ export interface DpidRequest {
   suffix?: string;
   prefix: string;
   raw?: boolean;
+  jsonld?: boolean;
 }
 
 // export const encodeBase64UrlSafe = (bytes: Buffer) => {
@@ -184,7 +187,24 @@ export class DpidReader {
     return `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
   };
 
+  private static transformJsonld = async (
+    result: DpidResult,
+    request: DpidRequest
+  ) => {
+    const rawRes = await this.transformRaw(result, request);
+    const resJson = await axios.get(rawRes);
+    const transformer = new RoCrateTransformer();
+
+    const roCrate = transformer.exportObject(resJson.data);
+
+    return JSON.stringify(roCrate);
+  };
+
   static transform = async (result: DpidResult, request: DpidRequest) => {
+    if (request.jsonld) {
+      console.log("[DpidReader::transform] jsonld", request);
+      return DpidReader.transformJsonld(result, request);
+    }
     if (request.raw) {
       console.log("[DpidReader::transform] raw", request);
       return DpidReader.transformRaw(result, request);
