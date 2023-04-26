@@ -1,11 +1,12 @@
-const RPC_URL = 'https://eth-goerli.g.alchemy.com/v2/GWLETGKsYgp0W7Z2IO8__3BEOM2KXiP8';
+const RPC_URL =
+  "https://eth-goerli.g.alchemy.com/v2/GWLETGKsYgp0W7Z2IO8__3BEOM2KXiP8";
 //'https://goerli.infura.io/v3/';
 import { AlchemyEth, createAlchemyWeb3 } from "@alch/alchemy-web3";
-import contract from "../deployments/goerli/config.json"
-import { encode, decode } from 'url-safe-base64';
+import contract from "../deployments/goerli/config.json";
+import { encode, decode } from "url-safe-base64";
 import { getIndexedResearchObjects } from "./TheGraphResolver";
-import { base16 } from 'multiformats/bases/base16';
-import { CID } from 'multiformats/cid';
+import { base16 } from "multiformats/bases/base16";
+import { CID } from "multiformats/cid";
 
 export interface DpidRequest {
   dpid: string;
@@ -41,11 +42,12 @@ export const convertHexTo64PID = (hex: string, hexToBytes: any) => {
 const DEFAULT_IPFS_GATEWAY = "https://ipfs.desci.com/ipfs";
 
 // the value of string "beta" in bytes32 encoded as hex
-const PREFIX_HARDCODE_BETA = "0x6265746100000000000000000000000000000000000000000000000000000000";
+const PREFIX_HARDCODE_BETA =
+  "0x6265746100000000000000000000000000000000000000000000000000000000";
 
 const THE_GRAPH_RESOLVER_URL: { [key: string]: string } = {
-  beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes"
-}
+  beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes",
+};
 
 interface ContractConfig {
   address: string;
@@ -84,47 +86,73 @@ export const hexToCid = (hexCid: string) => {
 };
 
 export class DpidReader {
-  static read = async ({ dpid, version, suffix, prefix }: DpidRequest): Promise<DpidResult> => {
+  static read = async ({
+    dpid,
+    version,
+    suffix,
+    prefix,
+  }: DpidRequest): Promise<DpidResult> => {
     const web3 = createAlchemyWeb3(RPC_URL);
 
-    const dpidRegistryContract = new web3.eth.Contract(contract.abi as any, contract.address);
-    const targetUuid = await dpidRegistryContract.methods.get(PREFIX_HARDCODE_BETA, dpid).call();
+    const dpidRegistryContract = new web3.eth.Contract(
+      contract.abi as any,
+      contract.address
+    );
+    const targetUuid = await dpidRegistryContract.methods
+      .get(PREFIX_HARDCODE_BETA, dpid)
+      .call();
     console.log("got uuid", targetUuid);
 
-    const hexUuid = web3.utils.numberToHex(targetUuid)
+    const hexUuid = web3.utils.numberToHex(targetUuid);
     console.log("hexUuid", hexUuid);
     const hexToPid = convertHexTo64PID(hexUuid, web3.utils.hexToBytes);
     console.log("pid", hexToPid);
 
     return { id64: hexToPid, id16: hexUuid };
-  }
+  };
 
-  private static transformWeb = async (result: DpidResult, request: DpidRequest) => {
-    const { suffix, version } = request;
+  private static transformWeb = async (
+    result: DpidResult,
+    request: DpidRequest
+  ) => {
+    const { prefix, suffix, version } = request;
     const uuid = result.id64;
     const output = { msg: `beta.dpid.org resolver`, params: request, uuid };
 
     // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic
-    const cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version!.substring(1)) - 1 : version;
-    const redir = `https://nodes.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join('/')}`
+    const cleanVersion =
+      version?.substring(0, 1) == "v"
+        ? parseInt(version!.substring(1)) - 1
+        : version;
+    const redir = `https://nodes${
+      prefix === "beta-dev" ? "-dev" : ""
+    }.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join("/")}`;
     console.log("[dpid:resolve]", output);
     return redir;
-  }
+  };
 
-  private static transformRaw = async (result: DpidResult, request: DpidRequest) => {
+  private static transformRaw = async (
+    result: DpidResult,
+    request: DpidRequest
+  ) => {
     const { prefix, suffix, version } = request;
     const hex = result.id16;
     const output = { msg: `beta.dpid.org resolver`, params: request, hex };
 
     const graphUrl = THE_GRAPH_RESOLVER_URL[prefix];
-    const graphResult: GraphResult = (await getIndexedResearchObjects(graphUrl, [hex])).researchObjects[0];
+    const graphResult: GraphResult = (
+      await getIndexedResearchObjects(graphUrl, [hex])
+    ).researchObjects[0];
 
     console.log("GRAPHRES", graphUrl, hex, JSON.stringify(graphResult));
 
     // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic and can pass the version identifier straight through
     let cleanVersion: number | undefined = undefined;
     if (version) {
-      cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version!.substring(1)) - 1 : parseInt(version);
+      cleanVersion =
+        version?.substring(0, 1) == "v"
+          ? parseInt(version!.substring(1)) - 1
+          : parseInt(version);
     }
 
     console.log("CLEAN VER", cleanVersion, version);
@@ -132,15 +160,17 @@ export class DpidReader {
     if (!cleanVersion) {
       console.log("totalver", graphResult);
       cleanVersion = graphResult.versions.length - 1;
-      console.log("set clean ver", cleanVersion)
+      console.log("set clean ver", cleanVersion);
     }
 
     const targetVersion = graphResult.versions[cleanVersion!];
 
-    console.log("got target", targetVersion)
+    console.log("got target", targetVersion);
 
     if (!targetVersion || !targetVersion.cid) {
-      throw new Error("incorrect version, to get the first version use either 'v1' or '0', to get the second version use either 'v2' or '1', to get the latest, don't pass any suffix");
+      throw new Error(
+        "incorrect version, to get the first version use either 'v1' or '0', to get the second version use either 'v2' or '1', to get the latest, don't pass any suffix"
+      );
     }
 
     const targetCid = hexToCid(targetVersion.cid);
@@ -152,14 +182,14 @@ export class DpidReader {
     // return redir;
     // throw new Error("nodes resolution fail")
     return `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
-  }
+  };
 
   static transform = async (result: DpidResult, request: DpidRequest) => {
     if (request.raw) {
-      console.log("[DpidReader::transform] raw", request)
+      console.log("[DpidReader::transform] raw", request);
       return DpidReader.transformRaw(result, request);
     }
-    console.log("[DpidReader::transform] web", request)
+    console.log("[DpidReader::transform] web", request);
     return DpidReader.transformWeb(result, request);
-  }
+  };
 }
