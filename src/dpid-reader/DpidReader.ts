@@ -8,7 +8,14 @@ import { getIndexedResearchObjects } from "./TheGraphResolver";
 import { base16 } from "multiformats/bases/base16";
 import { CID } from "multiformats/cid";
 import axios from "axios";
-import { RoCrateTransformer } from "@desci-labs/desci-models";
+import {
+  DataBucketComponent,
+  ResearchObject,
+  ResearchObjectComponentType,
+  ResearchObjectV1,
+  ResearchObjectV1Component,
+  RoCrateTransformer,
+} from "@desci-labs/desci-models";
 
 export interface DpidRequest {
   dpid: string;
@@ -180,6 +187,37 @@ export class DpidReader {
 
     console.log("targetCid", targetCid);
 
+    const manifestLocation = `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
+
+    const versionAsData = version === "data";
+    if (
+      versionAsData ||
+      (suffix && (suffix.indexOf("data") === 0 || suffix.indexOf("/data") > -1))
+    ) {
+      const res = await fetch(manifestLocation);
+      const researchObject: ResearchObjectV1 = await res.json();
+      const dataBucketCandidate: ResearchObjectV1Component =
+        researchObject.components[0];
+      if (
+        dataBucketCandidate &&
+        dataBucketCandidate.type === ResearchObjectComponentType.DATA_BUCKET
+      ) {
+        const dataBucket: DataBucketComponent =
+          dataBucketCandidate as DataBucketComponent;
+        let dataSuffix;
+        if (versionAsData) {
+          dataSuffix = suffix;
+        } else {
+          dataSuffix = suffix?.replace(/^data/, "");
+        }
+        return `${DEFAULT_IPFS_GATEWAY}/${dataBucket.payload.cid}${
+          dataSuffix ? `/${dataSuffix}` : ""
+        }`;
+      }
+      throw new Error(
+        "data resolution fail: data folder not found in manifest. ensure data folder has been allocated."
+      );
+    }
     // const redir = `https://nodes.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join('/')}`
     // console.log("[dpid:resolve]", output);
     // return redir;

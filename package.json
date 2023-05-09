@@ -2,7 +2,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "concurrently \"tsc --watch\" \"nodemon -q dist/index.js\""
+    "dev": "concurrently \"tsc --watch\" \"nodemon --inspect --inspect-port 9309 -q dist/index.js\""
   },
   "devDependencies": {
     "@types/express": "^4.17.17",
