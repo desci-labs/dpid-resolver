@@ -167,13 +167,14 @@ export class DpidReader {
 
     console.log("CLEAN VER", cleanVersion, version);
     // if no version specified, use latest
-    if (!cleanVersion) {
+    if (cleanVersion === undefined) {
       console.log("totalver", graphResult);
       cleanVersion = graphResult.versions.length - 1;
       console.log("set clean ver", cleanVersion);
     }
 
-    const targetVersion = graphResult.versions[cleanVersion!];
+    const targetVersion =
+      graphResult.versions[graphResult.versions.length - 1 - cleanVersion!];
 
     console.log("got target", targetVersion);
 
