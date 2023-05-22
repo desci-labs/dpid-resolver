@@ -167,7 +167,7 @@ export class DpidReader {
 
     console.log("CLEAN VER", cleanVersion, version);
     // if no version specified, use latest
-    if (cleanVersion === undefined) {
+    if (cleanVersion === undefined || isNaN(cleanVersion)) {
       console.log("totalver", graphResult);
       cleanVersion = graphResult.versions.length - 1;
       console.log("set clean ver", cleanVersion);
