@@ -7,6 +7,8 @@ dotenv.config();
 const app: Express = express();
 const port = process.env.PORT || 5469;
 
+app.get("/api/v1/*", )
+
 app.get("/*", async (req: Request, res: Response) => {
   try {
     const path = req.params[0];
