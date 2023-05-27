@@ -20,7 +20,7 @@ app.get("/*", async (req: Request, res: Response) => {
             "beta.dpid.org": "beta",
             "beta-dev.dpid.org": "beta-dev",
             "dev-beta.dpid.org": "beta",
-            "dev-beta-dev.dpid": "beta-dev"
+            "dev-beta-dev.dpid": "beta-dev",
         };
         const prefix = hostnameToPrefix[hostname] || "beta";
 
