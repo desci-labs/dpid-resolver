@@ -4,7 +4,8 @@
     "start": "node dist/index.js",
     "dev": "concurrently \"tsc --watch\" \"nodemon --inspect --inspect-port 9309 -q dist/index.js\"",
     "prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write",
-    "lint": "eslint . --ext .ts"
+    "lint": "eslint . --ext .ts",
+    "prepare": "husky install"
   },
   "devDependencies": {
     "@types/express": "^4.17.17",
