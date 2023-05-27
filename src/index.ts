@@ -19,6 +19,8 @@ app.get("/*", async (req: Request, res: Response) => {
         const hostnameToPrefix: { [hostname: string]: string } = {
             "beta.dpid.org": "beta",
             "beta-dev.dpid.org": "beta-dev",
+            "dev-beta.dpid.org": "beta",
+            "dev-beta-dev.dpid": "beta-dev"
         };
         const prefix = hostnameToPrefix[hostname] || "beta";
 
