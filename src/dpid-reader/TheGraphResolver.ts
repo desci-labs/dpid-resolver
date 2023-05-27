@@ -18,7 +18,7 @@ import axios from "axios";
   }
  */
 export const getAllDpidRegisrations = async (url: string, prefix: string) => {
-  const q = `
+    const q = `
   {
     registers(
       where: {prefix: "${prefix}"}
@@ -29,11 +29,11 @@ export const getAllDpidRegisrations = async (url: string, prefix: string) => {
       entryId
     }
   }`;
-  return query(url, q);
-}
+    return query(url, q);
+};
 
 export const getAllResearchObjectsForDpidRegistrations = async (url: string, dpidTransactionHashes: string[]) => {
-  const q = `{
+    const q = `{
     researchObjectVersions(
       where: {id_in: ["${dpidTransactionHashes.join('", "')}"]}
       orderBy: time
@@ -51,7 +51,7 @@ export const getAllResearchObjectsForDpidRegistrations = async (url: string, dpi
       }
     }
   }`;
-  return query(url, q);
+    return query(url, q);
 };
 
 export const getIndexedResearchObjects = async (url: string, hex: string[]) => {

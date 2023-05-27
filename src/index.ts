@@ -1,7 +1,7 @@
 import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
 import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
-import api from "./api"
+import api from "./api";
 dotenv.config();
 
 const app: Express = express();
