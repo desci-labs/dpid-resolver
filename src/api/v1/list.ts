@@ -1,5 +1,5 @@
-import { Request, Response } from "express"
+import { Request, Response } from "express";
 
 export const list = async (req: Request, res: Response) => {
-    res.json({ ok: true})
-}
+    res.json({ ok: true })
+};

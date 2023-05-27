@@ -1,5 +1,4 @@
-const RPC_URL =
-  "https://eth-goerli.g.alchemy.com/v2/GWLETGKsYgp0W7Z2IO8__3BEOM2KXiP8";
+const RPC_URL = "https://eth-goerli.g.alchemy.com/v2/GWLETGKsYgp0W7Z2IO8__3BEOM2KXiP8";
 //'https://goerli.infura.io/v3/';
 import { AlchemyEth, createAlchemyWeb3 } from "@alch/alchemy-web3";
 import contract from "../deployments/goerli/config.json";
@@ -9,21 +8,21 @@ import { base16 } from "multiformats/bases/base16";
 import { CID } from "multiformats/cid";
 import axios from "axios";
 import {
-  DataBucketComponent,
-  ResearchObject,
-  ResearchObjectComponentType,
-  ResearchObjectV1,
-  ResearchObjectV1Component,
-  RoCrateTransformer,
+    DataBucketComponent,
+    ResearchObject,
+    ResearchObjectComponentType,
+    ResearchObjectV1,
+    ResearchObjectV1Component,
+    RoCrateTransformer,
 } from "@desci-labs/desci-models";
 
 export interface DpidRequest {
-  dpid: string;
-  version?: string;
-  suffix?: string;
-  prefix: string;
-  raw?: boolean;
-  jsonld?: boolean;
+    dpid: string;
+    version?: string;
+    suffix?: string;
+    prefix: string;
+    raw?: boolean;
+    jsonld?: boolean;
 }
 
 // export const encodeBase64UrlSafe = (bytes: Buffer) => {
@@ -42,213 +41,174 @@ export interface DpidRequest {
 //   return base64UuidToBase16;
 // };
 export const convertHexTo64PID = (hex: string, hexToBytes: any) => {
-  const bytes: number[] = hexToBytes(hex);
+    const bytes: number[] = hexToBytes(hex);
 
-  const base64encoded = Buffer.from(bytes).toString("base64");
-  const base64SafePID = encode(base64encoded).replace(/[\.=]$/, "");
-  return base64SafePID;
+    const base64encoded = Buffer.from(bytes).toString("base64");
+    const base64SafePID = encode(base64encoded).replace(/[\.=]$/, "");
+    return base64SafePID;
 };
 
 const DEFAULT_IPFS_GATEWAY = "https://ipfs.desci.com/ipfs";
 
 // the value of string "beta" in bytes32 encoded as hex
-const PREFIX_HARDCODE_BETA =
-  "0x6265746100000000000000000000000000000000000000000000000000000000";
+const PREFIX_HARDCODE_BETA = "0x6265746100000000000000000000000000000000000000000000000000000000";
 
 const THE_GRAPH_RESOLVER_URL: { [key: string]: string } = {
-  beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes",
+    beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes",
 };
 
 interface ContractConfig {
-  address: string;
-  abi: any;
+    address: string;
+    abi: any;
 }
 
 interface DpidResult {
-  id16: string;
-  id64: string;
+    id16: string;
+    id64: string;
 }
 
 interface GraphResultVersion {
-  id: string;
-  cid: string;
-  time: string;
+    id: string;
+    cid: string;
+    time: string;
 }
 
 interface GraphResult {
-  id: string;
-  id10: string;
-  recentCid: string;
-  owner: string;
-  versions: GraphResultVersion[];
+    id: string;
+    id10: string;
+    recentCid: string;
+    owner: string;
+    versions: GraphResultVersion[];
 }
 
 export const hexToCid = (hexCid: string) => {
-  hexCid = hexCid.substring(2); // remove 0x
-  hexCid = hexCid.length % 2 === 0 ? hexCid.substring(1) : hexCid;
-  // const cidBytes = Buffer.from(hexCid, 'hex');
+    hexCid = hexCid.substring(2); // remove 0x
+    hexCid = hexCid.length % 2 === 0 ? hexCid.substring(1) : hexCid;
+    // const cidBytes = Buffer.from(hexCid, 'hex');
 
-  const res2 = base16.decode(hexCid);
-  const cid = CID.decode(res2);
-  const cidString = cid.toString();
+    const res2 = base16.decode(hexCid);
+    const cid = CID.decode(res2);
+    const cidString = cid.toString();
 
-  return cidString;
+    return cidString;
 };
 
 export class DpidReader {
-  static read = async ({
-    dpid,
-    version,
-    suffix,
-    prefix,
-  }: DpidRequest): Promise<DpidResult> => {
-    const web3 = createAlchemyWeb3(RPC_URL);
+    static read = async ({ dpid, version, suffix, prefix }: DpidRequest): Promise<DpidResult> => {
+        const web3 = createAlchemyWeb3(RPC_URL);
 
-    const dpidRegistryContract = new web3.eth.Contract(
-      contract.abi as any,
-      contract.address
-    );
-    const targetUuid = await dpidRegistryContract.methods
-      .get(PREFIX_HARDCODE_BETA, dpid)
-      .call();
-    console.log("got uuid", targetUuid);
+        const dpidRegistryContract = new web3.eth.Contract(contract.abi as any, contract.address);
+        const targetUuid = await dpidRegistryContract.methods.get(PREFIX_HARDCODE_BETA, dpid).call();
+        console.log("got uuid", targetUuid);
 
-    const hexUuid = web3.utils.numberToHex(targetUuid);
-    console.log("hexUuid", hexUuid);
-    const hexToPid = convertHexTo64PID(hexUuid, web3.utils.hexToBytes);
-    console.log("pid", hexToPid);
+        const hexUuid = web3.utils.numberToHex(targetUuid);
+        console.log("hexUuid", hexUuid);
+        const hexToPid = convertHexTo64PID(hexUuid, web3.utils.hexToBytes);
+        console.log("pid", hexToPid);
 
-    return { id64: hexToPid, id16: hexUuid };
-  };
+        return { id64: hexToPid, id16: hexUuid };
+    };
 
-  private static transformWeb = async (
-    result: DpidResult,
-    request: DpidRequest
-  ) => {
-    const { prefix, suffix, version } = request;
-    const uuid = result.id64;
-    const output = { msg: `beta.dpid.org resolver`, params: request, uuid };
+    private static transformWeb = async (result: DpidResult, request: DpidRequest) => {
+        const { prefix, suffix, version } = request;
+        const uuid = result.id64;
+        const output = { msg: `beta.dpid.org resolver`, params: request, uuid };
 
-    // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic
-    const cleanVersion =
-      version?.substring(0, 1) == "v"
-        ? parseInt(version!.substring(1)) - 1
-        : version;
-    const redir = `https://nodes${
-      prefix === "beta-dev" ? "-dev" : ""
-    }.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join("/")}`;
-    console.log("[dpid:resolve]", output);
-    return redir;
-  };
+        // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic
+        const cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version!.substring(1)) - 1 : version;
+        const redir = `https://nodes${prefix === "beta-dev" ? "-dev" : ""}.desci.com/${[uuid, cleanVersion, suffix]
+            .filter(Boolean)
+            .join("/")}`;
+        console.log("[dpid:resolve]", output);
+        return redir;
+    };
 
-  private static transformRaw = async (
-    result: DpidResult,
-    request: DpidRequest
-  ) => {
-    const { prefix, suffix, version } = request;
-    const hex = result.id16;
-    const output = { msg: `beta.dpid.org resolver`, params: request, hex };
+    private static transformRaw = async (result: DpidResult, request: DpidRequest) => {
+        const { prefix, suffix, version } = request;
+        const hex = result.id16;
+        const output = { msg: `beta.dpid.org resolver`, params: request, hex };
 
-    const graphUrl = THE_GRAPH_RESOLVER_URL[prefix];
-    const graphResult: GraphResult = (
-      await getIndexedResearchObjects(graphUrl, [hex])
-    ).researchObjects[0];
+        const graphUrl = THE_GRAPH_RESOLVER_URL[prefix];
+        const graphResult: GraphResult = (await getIndexedResearchObjects(graphUrl, [hex])).researchObjects[0];
 
-    console.log("GRAPHRES", graphUrl, hex, JSON.stringify(graphResult));
+        console.log("GRAPHRES", graphUrl, hex, JSON.stringify(graphResult));
 
-    // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic and can pass the version identifier straight through
-    let cleanVersion: number | undefined = undefined;
-    if (version) {
-      cleanVersion =
-        version?.substring(0, 1) == "v"
-          ? parseInt(version!.substring(1)) - 1
-          : parseInt(version);
-    }
-
-    console.log("CLEAN VER", cleanVersion, version);
-    // if no version specified, use latest
-    if (cleanVersion === undefined || isNaN(cleanVersion)) {
-      console.log("totalver", graphResult);
-      cleanVersion = graphResult.versions.length - 1;
-      console.log("set clean ver", cleanVersion);
-    }
-
-    const targetVersion =
-      graphResult.versions[graphResult.versions.length - 1 - cleanVersion!];
-
-    console.log("got target", targetVersion);
-
-    if (!targetVersion || !targetVersion.cid) {
-      throw new Error(
-        "incorrect version, to get the first version use either 'v1' or '0', to get the second version use either 'v2' or '1', to get the latest, don't pass any suffix"
-      );
-    }
-
-    const targetCid = hexToCid(targetVersion.cid);
-
-    console.log("targetCid", targetCid);
-
-    const manifestLocation = `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
-
-    const versionAsData = version === "data";
-    if (
-      versionAsData ||
-      (suffix && (suffix.indexOf("data") === 0 || suffix.indexOf("/data") > -1))
-    ) {
-      const res = await fetch(manifestLocation);
-      const researchObject: ResearchObjectV1 = await res.json();
-      const dataBucketCandidate: ResearchObjectV1Component =
-        researchObject.components[0];
-      if (
-        dataBucketCandidate &&
-        dataBucketCandidate.type === ResearchObjectComponentType.DATA_BUCKET
-      ) {
-        const dataBucket: DataBucketComponent =
-          dataBucketCandidate as DataBucketComponent;
-        let dataSuffix;
-        if (versionAsData) {
-          dataSuffix = suffix;
-        } else {
-          dataSuffix = suffix?.replace(/^data/, "");
+        // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic and can pass the version identifier straight through
+        let cleanVersion: number | undefined = undefined;
+        if (version) {
+            cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version!.substring(1)) - 1 : parseInt(version);
         }
-        return `${DEFAULT_IPFS_GATEWAY}/${dataBucket.payload.cid}${
-          dataSuffix ? `/${dataSuffix}` : ""
-        }`;
-      }
-      throw new Error(
-        "data resolution fail: data folder not found in manifest. ensure data folder has been allocated."
-      );
-    }
-    // const redir = `https://nodes.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join('/')}`
-    // console.log("[dpid:resolve]", output);
-    // return redir;
-    // throw new Error("nodes resolution fail")
-    return `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
-  };
 
-  private static transformJsonld = async (
-    result: DpidResult,
-    request: DpidRequest
-  ) => {
-    const rawRes = await this.transformRaw(result, request);
-    const resJson = await axios.get(rawRes);
-    const transformer = new RoCrateTransformer();
+        console.log("CLEAN VER", cleanVersion, version);
+        // if no version specified, use latest
+        if (cleanVersion === undefined || isNaN(cleanVersion)) {
+            console.log("totalver", graphResult);
+            cleanVersion = graphResult.versions.length - 1;
+            console.log("set clean ver", cleanVersion);
+        }
 
-    const roCrate = transformer.exportObject(resJson.data);
+        const targetVersion = graphResult.versions[graphResult.versions.length - 1 - cleanVersion!];
 
-    return JSON.stringify(roCrate);
-  };
+        console.log("got target", targetVersion);
 
-  static transform = async (result: DpidResult, request: DpidRequest) => {
-    if (request.jsonld) {
-      console.log("[DpidReader::transform] jsonld", request);
-      return DpidReader.transformJsonld(result, request);
-    }
-    if (request.raw) {
-      console.log("[DpidReader::transform] raw", request);
-      return DpidReader.transformRaw(result, request);
-    }
-    console.log("[DpidReader::transform] web", request);
-    return DpidReader.transformWeb(result, request);
-  };
+        if (!targetVersion || !targetVersion.cid) {
+            throw new Error(
+                "incorrect version, to get the first version use either 'v1' or '0', to get the second version use either 'v2' or '1', to get the latest, don't pass any suffix"
+            );
+        }
+
+        const targetCid = hexToCid(targetVersion.cid);
+
+        console.log("targetCid", targetCid);
+
+        const manifestLocation = `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
+
+        const versionAsData = version === "data";
+        if (versionAsData || (suffix && (suffix.indexOf("data") === 0 || suffix.indexOf("/data") > -1))) {
+            const res = await fetch(manifestLocation);
+            const researchObject: ResearchObjectV1 = await res.json();
+            const dataBucketCandidate: ResearchObjectV1Component = researchObject.components[0];
+            if (dataBucketCandidate && dataBucketCandidate.type === ResearchObjectComponentType.DATA_BUCKET) {
+                const dataBucket: DataBucketComponent = dataBucketCandidate as DataBucketComponent;
+                let dataSuffix;
+                if (versionAsData) {
+                    dataSuffix = suffix;
+                } else {
+                    dataSuffix = suffix?.replace(/^data/, "");
+                }
+                return `${DEFAULT_IPFS_GATEWAY}/${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
+            }
+            throw new Error(
+                "data resolution fail: data folder not found in manifest. ensure data folder has been allocated."
+            );
+        }
+        // const redir = `https://nodes.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join('/')}`
+        // console.log("[dpid:resolve]", output);
+        // return redir;
+        // throw new Error("nodes resolution fail")
+        return `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
+    };
+
+    private static transformJsonld = async (result: DpidResult, request: DpidRequest) => {
+        const rawRes = await this.transformRaw(result, request);
+        const resJson = await axios.get(rawRes);
+        const transformer = new RoCrateTransformer();
+
+        const roCrate = transformer.exportObject(resJson.data);
+
+        return JSON.stringify(roCrate);
+    };
+
+    static transform = async (result: DpidResult, request: DpidRequest) => {
+        if (request.jsonld) {
+            console.log("[DpidReader::transform] jsonld", request);
+            return DpidReader.transformJsonld(result, request);
+        }
+        if (request.raw) {
+            console.log("[DpidReader::transform] raw", request);
+            return DpidReader.transformRaw(result, request);
+        }
+        console.log("[DpidReader::transform] web", request);
+        return DpidReader.transformWeb(result, request);
+    };
 }
