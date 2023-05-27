@@ -1,13 +1,13 @@
 import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
 import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
-
+import api from "./api"
 dotenv.config();
 
 const app: Express = express();
 const port = process.env.PORT || 5469;
 
-app.get("/api/v1/*");
+app.use("/api", api);
 
 app.get("/*", async (req: Request, res: Response) => {
     try {

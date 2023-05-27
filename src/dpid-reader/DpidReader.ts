@@ -48,13 +48,14 @@ export const convertHexTo64PID = (hex: string, hexToBytes: any) => {
     return base64SafePID;
 };
 
-const DEFAULT_IPFS_GATEWAY = "https://ipfs.desci.com/ipfs";
+export const DEFAULT_IPFS_GATEWAY = "https://ipfs.desci.com/ipfs";
 
 // the value of string "beta" in bytes32 encoded as hex
-const PREFIX_HARDCODE_BETA = "0x6265746100000000000000000000000000000000000000000000000000000000";
+export const PREFIX_HARDCODE_BETA = "0x6265746100000000000000000000000000000000000000000000000000000000";
 
-const THE_GRAPH_RESOLVER_URL: { [key: string]: string } = {
+export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } = {
     beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes",
+    __registry: "https://graph-goerli-stage.desci.com/subgraphs/name/dpid-registry",
 };
 
 interface ContractConfig {
@@ -73,7 +74,7 @@ interface GraphResultVersion {
     time: string;
 }
 
-interface GraphResult {
+export interface GraphResult {
     id: string;
     id10: string;
     recentCid: string;

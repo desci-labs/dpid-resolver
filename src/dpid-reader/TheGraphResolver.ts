@@ -1,5 +1,59 @@
 import axios from "axios";
 
+/**
+ * 
+ * @param url 
+ * @param prefix 
+ * @returns 
+ * 
+ {
+  "data": {
+    "registers": [
+      {
+        "transactionHash": "0xe029123d7dd74c529f459000c3c7c65e4b98d540e5b021ac9abaf597e3165c60",
+        "entryId": "54"
+      },
+      ...
+    ]
+  }
+ */
+export const getAllDpidRegisrations = async (url: string, prefix: string) => {
+  const q = `
+  {
+    registers(
+      where: {prefix: "${prefix}"}
+      orderBy: entryId
+      orderDirection: desc
+    ) {
+      transactionHash
+      entryId
+    }
+  }`;
+  return query(url, q);
+}
+
+export const getAllResearchObjectsForDpidRegistrations = async (url: string, dpidTransactionHashes: string[]) => {
+  const q = `{
+    researchObjectVersions(
+      where: {id_in: ["${dpidTransactionHashes.join('", "')}"]}
+      orderBy: time
+      orderDirection: desc
+    ) {
+      id
+      cid
+      researchObject {
+        id
+        versions(orderBy: time) {
+          id
+          time
+          cid
+        }
+      }
+    }
+  }`;
+  return query(url, q);
+};
+
 export const getIndexedResearchObjects = async (url: string, hex: string[]) => {
     const q = `{
       researchObjects(where: { id_in: ["${hex.join('","')}"]}) {
