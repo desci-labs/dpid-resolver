@@ -102,7 +102,11 @@ export class DpidReader {
         const targetUuid = await dpidRegistryContract.methods.get(PREFIX_HARDCODE_BETA, dpid).call();
         console.log("got uuid", targetUuid);
 
-        const hexUuid = web3.utils.numberToHex(targetUuid);
+        let hexUuid = web3.utils.numberToHex(targetUuid);
+        // fix padding
+        if (hexUuid.length % 2 === 1) {
+            hexUuid = hexUuid.replace("0x", "0x0");
+        }
         console.log("hexUuid", hexUuid);
         const hexToPid = convertHexTo64PID(hexUuid, web3.utils.hexToBytes);
         console.log("pid", hexToPid);
