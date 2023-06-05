@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@alch/alchemy-web3": "^1.4.7",
-    "@desci-labs/desci-models": "0.1.7",
+    "@desci-labs/desci-models": "0.1.8",
     "axios": "^1.3.2",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",

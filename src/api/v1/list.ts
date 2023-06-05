@@ -56,7 +56,7 @@ export const list = async (req: Request, res: Response) => {
 
         res.json(graphResult.map(transformGraphResult(transactionHashToDpid)));
     } catch (err: any) {
-        res.json({ ok: false, error: err.message }).status(500);
+        res.json({ ok: false, error: err.message, path: "/api/v1/dpid" }).status(500);
         console.log("ERROR", err.message);
     }
 };
