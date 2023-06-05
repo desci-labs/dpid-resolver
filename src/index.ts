@@ -58,7 +58,7 @@ app.get("/*", async (req: Request, res: Response) => {
             detail: err,
             params: req.params,
             query: req.query,
-            path: "/*"
+            path: "/*",
         });
         console.error(err);
     }
