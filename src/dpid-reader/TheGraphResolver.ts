@@ -1,4 +1,6 @@
 import axios from "axios";
+import parentLogger from "logger";
+const logger = parentLogger.child({ module: "TheGraphResolver" });
 
 /**
  * 
@@ -71,7 +73,7 @@ export const query = async (url: string, query: string) => {
     });
     const { data } = await axios.post(url, payload);
     if (data.errors) {
-        console.error(`graph index query err ${query}`, JSON.stringify(data.errors));
+        logger.error(data.errors, `graph index query err ${query}`);
         throw Error(JSON.stringify(data.errors));
     }
     return data.data;

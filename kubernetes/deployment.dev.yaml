@@ -1,34 +1,52 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dpid-resolver-dev
-  labels:
-    App: DpidResolverDev
-spec:
-  replicas: 2
-  revisionHistoryLimit: 2
-  selector:
-    matchLabels:
-      App: DpidResolverDev
-  strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
-  template:
-    metadata:
-      labels:
+    name: dpid-resolver-dev
+    labels:
         App: DpidResolverDev
-    spec:
-      containers:
-        - image: 523044037273.dkr.ecr.us-east-2.amazonaws.com/dpid-resolver-dev:latest
-          name: dpid-resolver-dev
-          ports:
-            - containerPort: 5469
-          resources:
-            limits:
-              cpu: '0.5'
-              memory: 512Mi
-            requests:
-              cpu: 250m
-              memory: 50Mi
+spec:
+    replicas: 2
+    revisionHistoryLimit: 2
+    selector:
+        matchLabels:
+            App: DpidResolverDev
+    strategy:
+        rollingUpdate:
+            maxSurge: 25%
+            maxUnavailable: 25%
+        type: RollingUpdate
+    template:
+        metadata:
+            annotations:
+                vault.hashicorp.com/agent-inject: "true"
+                vault.hashicorp.com/agent-inject-status: "update"
+                vault.hashicorp.com/role: app-vault-reader
+                vault.hashicorp.com/agent-inject-secret-config: secrets/dpid-resolver/dev
+                vault.hashicorp.com/agent-inject-template-config: |
+                    {{- with secret "secrets/dpid-resolver/dev" -}}
+                    echo "appstart"; 
+                    export NODE_ENV=production
+                    export SUPABASE_URL={{ .Data.SUPABASE_URL }}
+                    export SUPABASE_KEY={{ .Data.SUPABASE_KEY }}
+                    export DEBUG_TEST=0;
+                    echo "loaded"
+                    {{- end -}}
+            labels:
+                App: DpidResolverDev
+        spec:
+            containers:
+                - image: 523044037273.dkr.ecr.us-east-2.amazonaws.com/dpid-resolver-dev:latest
+                  name: dpid-resolver-dev
+                  command: ["/bin/bash", "-c"]
+                  args:
+                      - echo "SOURCING ENV"; source /vault/secrets/config; NODE_PATH=./dist node ./dist/index.js;
+                  ports:
+                      - containerPort: 5469
+                  resources:
+                      limits:
+                          cpu: "0.5"
+                          memory: 512Mi
+                      requests:
+                          cpu: 250m
+                          memory: 50Mi
+            serviceAccountName: "vault-auth"
