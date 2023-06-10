@@ -10,7 +10,7 @@ export enum LogEventType {
 }
 
 export interface LogRequest {
-    dpid: string;
+    dpid: number;
     version: number;
     extra: any;
     eventType: LogEventType;

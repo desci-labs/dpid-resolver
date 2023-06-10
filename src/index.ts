@@ -53,7 +53,7 @@ app.get("/*", async (req: Request, res: Response) => {
             jsonld: isJsonld,
         };
 
-        analytics.log({ dpid, version: parseInt(version!), extra: dpidRequest, eventType: LogEventType.DPID_GET });
+        analytics.log({ dpid: parseInt(dpid), version: parseInt(version!), extra: dpidRequest, eventType: LogEventType.DPID_GET });
 
         const dpidResult = await DpidReader.read(dpidRequest);
         if (dpidResult.id16 == "0x0") {

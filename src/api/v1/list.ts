@@ -40,7 +40,7 @@ interface ResearchObjectVersionResult {
 
 export const list = async (req: Request, res: Response) => {
     logger.info("GET /api/v1/dpid");
-    analytics.log({ dpid: "list", version: 0, eventType: LogEventType.DPID_LIST, extra: {} });
+    analytics.log({ dpid: 0, version: 0, eventType: LogEventType.DPID_LIST, extra: {} });
     try {
         const graphUrlRo = THE_GRAPH_RESOLVER_URL["beta"];
         const graphUrlDpid = THE_GRAPH_RESOLVER_URL["__registry"];
