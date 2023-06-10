@@ -20,11 +20,6 @@
     "nodemon": "^2.0.20",
     "prettier": "^2.8.8"
   },
-  "husky": {
-    "hooks": {
-      "pre-commit": "npm run prettier-format && npm run lint"
-    }
-  },
   "dependencies": {
     "@alch/alchemy-web3": "^1.4.7",
     "@desci-labs/desci-models": "0.1.8",
