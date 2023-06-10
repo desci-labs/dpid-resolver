@@ -145,7 +145,7 @@ export class DpidReader {
             cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version!.substring(1)) - 1 : parseInt(version);
         }
 
-        logger.debug({ cleanVersion, version, }, "CLEAN VER");
+        logger.debug({ cleanVersion, version }, "CLEAN VER");
         // if no version specified, use latest
         if (cleanVersion === undefined || isNaN(cleanVersion)) {
             logger.debug({ graphResult }, "totalver");

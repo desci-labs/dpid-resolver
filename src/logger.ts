@@ -25,8 +25,8 @@ const logger = pino({
         process.env.NODE_ENV === "production"
             ? undefined
             : {
-                targets: [devTransport, fileTransport],
-            },
+                  targets: [devTransport, fileTransport],
+              },
     redact: {
         paths: [
             "req.headers.cookie",

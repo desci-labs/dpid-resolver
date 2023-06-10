@@ -4,7 +4,7 @@ import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
 import api from "./api";
 import logger from "logger";
 import pinoHttp from "pino-http";
-dotenv.config({ path: '../' });
+dotenv.config({ path: "../" });
 
 const app: Express = express();
 const port = process.env.PORT || 5469;
@@ -17,7 +17,7 @@ app.get("/*", async (req: Request, res: Response) => {
     try {
         const path = req.params[0];
 
-        if (['favicon.ico'].indexOf(path) > -1) {
+        if (["favicon.ico"].indexOf(path) > -1) {
             throw new Error("ignore");
         }
 
@@ -36,7 +36,7 @@ app.get("/*", async (req: Request, res: Response) => {
 
         const [dpid, ...extras] = path.split("/");
         if (dpid === undefined) {
-            logger.error("dpid not specified")
+            logger.error("dpid not specified");
             throw new Error("dpid not specified, pass dpid as route path");
         }
         const isRaw = Object.keys(req.query).indexOf("raw") > -1;
