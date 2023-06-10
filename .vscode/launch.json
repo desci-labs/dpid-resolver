@@ -11,7 +11,7 @@
             "restart": true,
             "port": 9309,
             "address": "localhost",
-            "localRoot": "${workspaceFolder}",
+            "localRoot": "${workspaceFolder}"
         }
     ]
 }

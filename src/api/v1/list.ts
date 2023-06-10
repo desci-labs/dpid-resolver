@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { GraphResult, PREFIX_HARDCODE_BETA, THE_GRAPH_RESOLVER_URL, hexToCid } from "../../dpid-reader/DpidReader";
 import { getAllDpidRegisrations, getAllResearchObjectsForDpidRegistrations } from "../../dpid-reader/TheGraphResolver";
+import parentLogger from "logger";
+const logger = parentLogger.child({ module: "api/v1/list" });
 
 const safeHexToCid = (hex: string) => {
     return hex.length > 2 ? hexToCid(hex) : "";
@@ -36,7 +38,7 @@ interface ResearchObjectVersionResult {
 }
 
 export const list = async (req: Request, res: Response) => {
-    console.log("GET /api/v1/dpid");
+    logger.info("GET /api/v1/dpid");
     try {
         const graphUrlRo = THE_GRAPH_RESOLVER_URL["beta"];
         const graphUrlDpid = THE_GRAPH_RESOLVER_URL["__registry"];
@@ -57,6 +59,6 @@ export const list = async (req: Request, res: Response) => {
         res.json(graphResult.map(transformGraphResult(transactionHashToDpid)));
     } catch (err: any) {
         res.json({ ok: false, error: err.message, path: "/api/v1/dpid" }).status(500);
-        console.log("ERROR", err.message);
+        logger.error("ERROR", err.message);
     }
 };

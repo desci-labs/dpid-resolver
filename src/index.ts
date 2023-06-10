@@ -2,10 +2,14 @@ import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
 import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
 import api from "./api";
-dotenv.config();
+import logger from "logger";
+import pinoHttp from "pino-http";
+dotenv.config({ path: '../' });
 
 const app: Express = express();
 const port = process.env.PORT || 5469;
+
+app.use(pinoHttp({ logger }));
 
 app.use("/api", api);
 
@@ -13,8 +17,12 @@ app.get("/*", async (req: Request, res: Response) => {
     try {
         const path = req.params[0];
 
+        if (['favicon.ico'].indexOf(path) > -1) {
+            throw new Error("ignore");
+        }
+
         const hostname = req.hostname;
-        console.log(`Resolving for ${hostname} path: ${path}`);
+        logger.info(`Resolving for ${hostname} path: ${path}`);
 
         const hostnameToPrefix: { [hostname: string]: string } = {
             "beta.dpid.org": "beta",
@@ -24,10 +32,11 @@ app.get("/*", async (req: Request, res: Response) => {
         };
         const prefix = hostnameToPrefix[hostname] || "beta";
 
-        console.log("Prefix set to", prefix);
+        logger.info("Prefix set to", prefix);
 
         const [dpid, ...extras] = path.split("/");
         if (dpid === undefined) {
+            logger.error("dpid not specified")
             throw new Error("dpid not specified, pass dpid as route path");
         }
         const isRaw = Object.keys(req.query).indexOf("raw") > -1;
@@ -43,6 +52,7 @@ app.get("/*", async (req: Request, res: Response) => {
         };
         const dpidResult = await DpidReader.read(dpidRequest);
         if (dpidResult.id16 == "0x0") {
+            logger.error("dpid not found");
             throw new Error("dpid not found");
         }
         const redir = await DpidReader.transform(dpidResult, dpidRequest);
@@ -60,10 +70,10 @@ app.get("/*", async (req: Request, res: Response) => {
             query: req.query,
             path: "/*",
         });
-        console.error(err);
+        logger.error({ err }, "GET /* wildcard-error");
     }
 });
 
 app.listen(port, () => {
-    console.log(`⚡️[server]: Server is running at http://localhost:${port}`);
+    logger.info(`⚡️[server]: Server is running at http://localhost:${port}`);
 });

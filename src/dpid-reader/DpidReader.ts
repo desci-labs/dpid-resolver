@@ -15,7 +15,8 @@ import {
     ResearchObjectV1Component,
     RoCrateTransformer,
 } from "@desci-labs/desci-models";
-
+import parentLogger from "logger";
+const logger = parentLogger.child({ module: "DpidReader" });
 export interface DpidRequest {
     dpid: string;
     version?: string;
@@ -100,16 +101,16 @@ export class DpidReader {
 
         const dpidRegistryContract = new web3.eth.Contract(contract.abi as any, contract.address);
         const targetUuid = await dpidRegistryContract.methods.get(PREFIX_HARDCODE_BETA, dpid).call();
-        console.log("got uuid", targetUuid);
+        logger.info({ targetUuid }, "got uuid");
 
         let hexUuid = web3.utils.numberToHex(targetUuid);
         // fix padding
         if (hexUuid.length % 2 === 1) {
             hexUuid = hexUuid.replace("0x", "0x0");
         }
-        console.log("hexUuid", hexUuid);
+        logger.info({ hexUuid }, "hexUuid");
         const hexToPid = convertHexTo64PID(hexUuid, web3.utils.hexToBytes);
-        console.log("pid", hexToPid);
+        logger.info({ hexToPid }, "pid");
 
         return { id64: hexToPid, id16: hexUuid };
     };
@@ -124,7 +125,7 @@ export class DpidReader {
         const redir = `https://nodes${prefix === "beta-dev" ? "-dev" : ""}.desci.com/${[uuid, cleanVersion, suffix]
             .filter(Boolean)
             .join("/")}`;
-        console.log("[dpid:resolve]", output);
+        logger.info({ output }, "[dpid:resolve]");
         return redir;
     };
 
@@ -136,7 +137,7 @@ export class DpidReader {
         const graphUrl = THE_GRAPH_RESOLVER_URL[prefix];
         const graphResult: GraphResult = (await getIndexedResearchObjects(graphUrl, [hex])).researchObjects[0];
 
-        console.log("GRAPHRES", graphUrl, hex, JSON.stringify(graphResult));
+        logger.info({ graphUrl, hex, graphResult }, "GRAPHRES");
 
         // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic and can pass the version identifier straight through
         let cleanVersion: number | undefined = undefined;
@@ -144,17 +145,17 @@ export class DpidReader {
             cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version!.substring(1)) - 1 : parseInt(version);
         }
 
-        console.log("CLEAN VER", cleanVersion, version);
+        logger.debug({ cleanVersion, version, }, "CLEAN VER");
         // if no version specified, use latest
         if (cleanVersion === undefined || isNaN(cleanVersion)) {
-            console.log("totalver", graphResult);
+            logger.debug({ graphResult }, "totalver");
             cleanVersion = graphResult.versions.length - 1;
-            console.log("set clean ver", cleanVersion);
+            logger.debug({ cleanVersion }, "set clean ver");
         }
 
         const targetVersion = graphResult.versions[graphResult.versions.length - 1 - cleanVersion!];
 
-        console.log("got target", targetVersion);
+        logger.info({ targetVersion }, "got target");
 
         if (!targetVersion || !targetVersion.cid) {
             throw new Error(
@@ -164,7 +165,7 @@ export class DpidReader {
 
         const targetCid = hexToCid(targetVersion.cid);
 
-        console.log("targetCid", targetCid);
+        logger.info({ targetCid }, "targetCid");
 
         const manifestLocation = `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
 
@@ -188,7 +189,7 @@ export class DpidReader {
             );
         }
         // const redir = `https://nodes.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join('/')}`
-        // console.log("[dpid:resolve]", output);
+        // logger.info({output},"[dpid:resolve]");
         // return redir;
         // throw new Error("nodes resolution fail")
         return `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
@@ -206,14 +207,14 @@ export class DpidReader {
 
     static transform = async (result: DpidResult, request: DpidRequest) => {
         if (request.jsonld) {
-            console.log("[DpidReader::transform] jsonld", request);
+            logger.info({ request }, "[DpidReader::transform] jsonld");
             return DpidReader.transformJsonld(result, request);
         }
         if (request.raw) {
-            console.log("[DpidReader::transform] raw", request);
+            logger.info({ request }, "[DpidReader::transform] raw");
             return DpidReader.transformRaw(result, request);
         }
-        console.log("[DpidReader::transform] web", request);
+        logger.info({ request }, "[DpidReader::transform] web");
         return DpidReader.transformWeb(result, request);
     };
 }

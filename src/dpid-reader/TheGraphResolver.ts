@@ -1,4 +1,6 @@
 import axios from "axios";
+import parentLogger from "logger";
+const logger = parentLogger.child({ module: "TheGraphResolver" });
 
 /**
  * 
@@ -18,7 +20,7 @@ import axios from "axios";
   }
  */
 export const getAllDpidRegisrations = async (url: string, prefix: string) => {
-    const q = `
+  const q = `
   {
     registers(
       where: {prefix: "${prefix}"}
@@ -29,11 +31,11 @@ export const getAllDpidRegisrations = async (url: string, prefix: string) => {
       entryId
     }
   }`;
-    return query(url, q);
+  return query(url, q);
 };
 
 export const getAllResearchObjectsForDpidRegistrations = async (url: string, dpidTransactionHashes: string[]) => {
-    const q = `{
+  const q = `{
     researchObjectVersions(
       where: {id_in: ["${dpidTransactionHashes.join('", "')}"]}
       orderBy: time
@@ -51,28 +53,28 @@ export const getAllResearchObjectsForDpidRegistrations = async (url: string, dpi
       }
     }
   }`;
-    return query(url, q);
+  return query(url, q);
 };
 
 export const getIndexedResearchObjects = async (url: string, hex: string[]) => {
-    const q = `{
+  const q = `{
       researchObjects(where: { id_in: ["${hex.join('","')}"]}) {
         id, id10, recentCid, owner, versions(orderBy: time, orderDirection: desc) {
           cid, id, time
         }
       } 
     }`;
-    return query(url, q);
+  return query(url, q);
 };
 
 export const query = async (url: string, query: string) => {
-    const payload = JSON.stringify({
-        query,
-    });
-    const { data } = await axios.post(url, payload);
-    if (data.errors) {
-        console.error(`graph index query err ${query}`, JSON.stringify(data.errors));
-        throw Error(JSON.stringify(data.errors));
-    }
-    return data.data;
+  const payload = JSON.stringify({
+    query,
+  });
+  const { data } = await axios.post(url, payload);
+  if (data.errors) {
+    logger.error(data.errors, `graph index query err ${query}`);
+    throw Error(JSON.stringify(data.errors));
+  }
+  return data.data;
 };
