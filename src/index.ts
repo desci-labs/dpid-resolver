@@ -18,7 +18,8 @@ app.get("/*", async (req: Request, res: Response) => {
         const path = req.params[0];
 
         if (["favicon.ico"].indexOf(path) > -1) {
-            throw new Error("ignore");
+            res.status(404).send()
+            return;
         }
 
         const hostname = req.hostname;
