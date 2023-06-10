@@ -1,10 +1,11 @@
-import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
+dotenv.config({ path: "../" });
+import express, { Express, Request, Response } from "express";
 import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
 import api from "./api";
 import logger from "logger";
 import pinoHttp from "pino-http";
-dotenv.config({ path: "../" });
+import analytics, { LogEventType } from "analytics"
 
 const app: Express = express();
 const port = process.env.PORT || 5469;
@@ -18,7 +19,7 @@ app.get("/*", async (req: Request, res: Response) => {
         const path = req.params[0];
 
         if (["favicon.ico"].indexOf(path) > -1) {
-            res.status(404).send()
+            res.status(404).send();
             return;
         }
 
@@ -51,6 +52,9 @@ app.get("/*", async (req: Request, res: Response) => {
             raw: isRaw,
             jsonld: isJsonld,
         };
+
+        analytics.log({ dpid, version: parseInt(version!), extra: dpidRequest, eventType: LogEventType.DPID_GET })
+
         const dpidResult = await DpidReader.read(dpidRequest);
         if (dpidResult.id16 == "0x0") {
             logger.error("dpid not found");

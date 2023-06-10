@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { GraphResult, PREFIX_HARDCODE_BETA, THE_GRAPH_RESOLVER_URL, hexToCid } from "../../dpid-reader/DpidReader";
 import { getAllDpidRegisrations, getAllResearchObjectsForDpidRegistrations } from "../../dpid-reader/TheGraphResolver";
 import parentLogger from "logger";
+import analytics, { LogEventType } from "analytics";
 const logger = parentLogger.child({ module: "api/v1/list" });
 
 const safeHexToCid = (hex: string) => {
@@ -39,6 +40,7 @@ interface ResearchObjectVersionResult {
 
 export const list = async (req: Request, res: Response) => {
     logger.info("GET /api/v1/dpid");
+    analytics.log({ dpid: "list", version: 0, eventType: LogEventType.DPID_LIST, extra: {} })
     try {
         const graphUrlRo = THE_GRAPH_RESOLVER_URL["beta"];
         const graphUrlDpid = THE_GRAPH_RESOLVER_URL["__registry"];

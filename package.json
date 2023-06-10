@@ -2,7 +2,7 @@
   "scripts": {
     "build": "tsc && tsc-alias",
     "start": "NODE_ENV=production node dist/index.js",
-    "dev": "concurrently -c \"tsc --watch\" \"nodemon --inspect --inspect-port 9309 -q dist/index.js\"",
+    "dev": "concurrently \"NODE_ENV=dev tsc --watch\" \"tsc-alias --watch\" \"nodemon --inspect --inspect-port 9309 -q dist/index.js\"",
     "prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write",
     "lint": "eslint . --ext .ts",
     "prepare": "husky install"
@@ -24,6 +24,7 @@
   "dependencies": {
     "@alch/alchemy-web3": "^1.4.7",
     "@desci-labs/desci-models": "0.1.8",
+    "@supabase/supabase-js": "^2.24.0",
     "axios": "^1.3.2",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
