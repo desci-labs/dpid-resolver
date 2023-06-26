@@ -172,14 +172,12 @@ export class DpidReader {
         logger.info({ targetCid }, "targetCid");
 
         const manifestLocation = `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
-
         const dataRootString = version && ["data", "root"].indexOf(version) > -1 ? version : false;
         const versionAsData = !!dataRootString;
         if (
             versionAsData ||
-            (suffix &&
-                dataRootString &&
-                (suffix.indexOf(dataRootString) === 0 || suffix.indexOf(`/${dataRootString}`) > -1))
+            (suffix && (suffix.indexOf("data") === 0 || suffix.indexOf(`/data`) === 0)) ||
+            (suffix && (suffix.indexOf("root") === 0 || suffix.indexOf(`/root`) === 0))
         ) {
             const res = await fetch(manifestLocation);
             const researchObject: ResearchObjectV1 = await res.json();
@@ -190,7 +188,7 @@ export class DpidReader {
                 if (versionAsData) {
                     dataSuffix = suffix;
                 } else {
-                    dataSuffix = suffix?.replace(`^${dataRootString}`, "");
+                    dataSuffix = suffix?.replace(/^(root|data)/, "");
                 }
                 const arg = `${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
                 const dagTestURl = `${DEFAULT_IPFS_GATEWAY.replace(/\/ipfs$/, "")}/api/v0/dag/get?arg=${arg}`;
