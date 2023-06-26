@@ -41,7 +41,7 @@ spec:
                   args:
                       - echo "SOURCING ENV"; source /vault/secrets/config; NODE_PATH=./dist node ./dist/index.js;
                   ports:
-                      - containerPort: 5460
+                      - containerPort: 5469
                   resources:
                       limits:
                           cpu: "0.5"
