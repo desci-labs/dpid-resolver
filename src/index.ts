@@ -8,7 +8,7 @@ import pinoHttp from "pino-http";
 import analytics, { LogEventType } from "analytics";
 
 const app: Express = express();
-const port = process.env.PORT || 5469;
+const port = process.env.PORT || 5460;
 
 app.use(pinoHttp({ logger }));
 
