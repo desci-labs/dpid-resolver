@@ -95,6 +95,10 @@ export const hexToCid = (hexCid: string) => {
     return cidString;
 };
 
+export interface DataResponse {
+    data: object;
+}
+
 export class DpidReader {
     static read = async ({ dpid, version, suffix, prefix }: DpidRequest): Promise<DpidResult> => {
         const web3 = createAlchemyWeb3(RPC_URL);
@@ -129,7 +133,7 @@ export class DpidReader {
         return redir;
     };
 
-    private static transformRaw = async (result: DpidResult, request: DpidRequest) => {
+    private static transformRaw = async (result: DpidResult, request: DpidRequest): Promise<string | DataResponse> => {
         const { prefix, suffix, version } = request;
         const hex = result.id16;
         const output = { msg: `beta.dpid.org resolver`, params: request, hex };
@@ -169,8 +173,14 @@ export class DpidReader {
 
         const manifestLocation = `${DEFAULT_IPFS_GATEWAY}/${targetCid}`;
 
-        const versionAsData = version === "data";
-        if (versionAsData || (suffix && (suffix.indexOf("data") === 0 || suffix.indexOf("/data") > -1))) {
+        const dataRootString = version && ["data", "root"].indexOf(version) > -1 ? version : false;
+        const versionAsData = !!dataRootString;
+        if (
+            versionAsData ||
+            (suffix &&
+                dataRootString &&
+                (suffix.indexOf(dataRootString) === 0 || suffix.indexOf(`/${dataRootString}`) > -1))
+        ) {
             const res = await fetch(manifestLocation);
             const researchObject: ResearchObjectV1 = await res.json();
             const dataBucketCandidate: ResearchObjectV1Component = researchObject.components[0];
@@ -180,9 +190,17 @@ export class DpidReader {
                 if (versionAsData) {
                     dataSuffix = suffix;
                 } else {
-                    dataSuffix = suffix?.replace(/^data/, "");
+                    dataSuffix = suffix?.replace(`^${dataRootString}`, "");
                 }
-                return `${DEFAULT_IPFS_GATEWAY}/${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
+                const arg = `${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
+                const dagTestURl = `${DEFAULT_IPFS_GATEWAY.replace(/\/ipfs$/, "")}/api/v0/dag/get?arg=${arg}`;
+                const { data } = await axios.get(dagTestURl);
+
+                if (data.Data["/"].bytes != "CAE") {
+                    return `${DEFAULT_IPFS_GATEWAY}/${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
+                } else {
+                    return { data };
+                }
             }
             throw new Error(
                 "data resolution fail: data folder not found in manifest. ensure data folder has been allocated."
@@ -196,7 +214,7 @@ export class DpidReader {
     };
 
     private static transformJsonld = async (result: DpidResult, request: DpidRequest) => {
-        const rawRes = await this.transformRaw(result, request);
+        const rawRes = (await this.transformRaw(result, request)) as string;
         const resJson = await axios.get(rawRes);
         const transformer = new RoCrateTransformer();
 

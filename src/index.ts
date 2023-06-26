@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config({ path: "../" });
 import express, { Express, Request, Response } from "express";
-import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
+import { DataResponse, DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
 import api from "./api";
 import logger from "logger";
 import pinoHttp from "pino-http";
@@ -69,6 +69,10 @@ app.get("/*", async (req: Request, res: Response) => {
         // res.send({ output, redir });
         if (dpidRequest.jsonld) {
             res.setHeader("Content-Type", "application/ld+json").send(redir);
+            return;
+        }
+        if (typeof redir !== "string") {
+            res.send(redir);
             return;
         }
         res.redirect(redir as string);
