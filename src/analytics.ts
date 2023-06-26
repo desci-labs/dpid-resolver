@@ -26,7 +26,7 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
 
 export default {
     log: async ({ dpid, version, extra, eventType }: LogRequest) => {
-        logger.info({ supabase: !!supabase, dpid, version, extra, eventType }, "log analytics");
+        logger.info({ supabase: !!supabase }, "log analytics");
         if (supabase) {
             const { data, error } = await supabase
                 .from("dpid_usage")
