@@ -192,12 +192,17 @@ export class DpidReader {
                 }
                 const arg = `${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
                 const dagTestURl = `${DEFAULT_IPFS_GATEWAY.replace(/\/ipfs$/, "")}/api/v0/dag/get?arg=${arg}`;
-                const { data } = await axios.get(dagTestURl);
+                try {
+                    const { data } = await axios.get(dagTestURl);
 
-                if (data.Data["/"].bytes != "CAE") {
-                    return `${DEFAULT_IPFS_GATEWAY}/${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
-                } else {
-                    return { data };
+                    if (!data.Data || data.Data["/"].bytes !== "CAE") {
+                        return `${DEFAULT_IPFS_GATEWAY}/${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
+                    } else {
+                        return { data };
+                    }
+                } catch (err) {
+                    logger.error(err);
+                    throw new Error("data could not be resolved: check the path and version");
                 }
             }
             throw new Error(
