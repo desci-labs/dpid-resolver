@@ -198,7 +198,7 @@ export class DpidReader {
                     if (!data.Data || data.Data["/"].bytes !== "CAE") {
                         return `${DEFAULT_IPFS_GATEWAY}/${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
                     } else {
-                        return { data };
+                        return data;
                     }
                 } catch (err) {
                     logger.error(err);
