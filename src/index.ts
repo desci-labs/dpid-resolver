@@ -75,7 +75,12 @@ app.get("/*", async (req: Request, res: Response) => {
             res.send(redir);
             return;
         }
-        res.redirect(redir as string);
+        res.redirect(
+            (redir as string).replace(
+                "bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4/Data",
+                "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
+            )
+        );
     } catch (err) {
         res.status(400).send({
             error: (err as any).message,

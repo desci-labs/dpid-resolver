@@ -6,6 +6,8 @@ import { encode, decode } from "url-safe-base64";
 import { getIndexedResearchObjects } from "./TheGraphResolver";
 import { base16 } from "multiformats/bases/base16";
 import { CID } from "multiformats/cid";
+import fs from "fs";
+import https from "https";
 import axios from "axios";
 import {
     DataBucketComponent,
@@ -98,7 +100,8 @@ export const hexToCid = (hexCid: string) => {
 export interface DataResponse {
     data: object;
 }
-
+const caBundle = fs.readFileSync("ssl/sealstorage-bundle.crt");
+const agent = new https.Agent({ ca: caBundle, rejectUnauthorized: false });
 export class DpidReader {
     static read = async ({ dpid, version, suffix, prefix }: DpidRequest): Promise<DpidResult> => {
         const web3 = createAlchemyWeb3(RPC_URL);
@@ -190,13 +193,28 @@ export class DpidReader {
                 } else {
                     dataSuffix = suffix?.replace(/^(root|data)/, "");
                 }
-                const arg = `${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
-                const dagTestURl = `${DEFAULT_IPFS_GATEWAY.replace(/\/ipfs$/, "")}/api/v0/dag/get?arg=${arg}`;
-                try {
-                    const { data } = await axios.get(dagTestURl);
+                dataSuffix = dataSuffix?.replace(/^\//, "");
 
+                const arg = `${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`
+                    .replace("?raw", "")
+                    .replace(
+                        "bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4/Data",
+                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
+                    );
+
+                const CID_MAP: { [key: string]: string } = {
+                    bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4: "https://maritime.sealstorage.io/ipfs",
+                };
+                const defaultGateway = DEFAULT_IPFS_GATEWAY.replace(/\/ipfs$/, "");
+                const selectedGateway =
+                    (dataSuffix!.length > 0 ? CID_MAP[dataBucket.payload.cid] : defaultGateway) || defaultGateway;
+                const dagTestURl = `${selectedGateway}/api/v0/dag/get?arg=${arg}`;
+                console.log(dagTestURl, "dagTestURl");
+                try {
+                    const { data } = await axios({ method: "POST", url: dagTestURl, httpsAgent: agent });
+                    console.log("posted");
                     if (!data.Data || data.Data["/"].bytes !== "CAE") {
-                        return `${DEFAULT_IPFS_GATEWAY}/${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
+                        return `${selectedGateway}/${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
                     } else {
                         return data;
                     }

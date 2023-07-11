@@ -1,38 +1,39 @@
 {
-  "scripts": {
-    "build": "tsc && tsc-alias",
-    "start": "node dist/index.js",
-    "dev": "concurrently \"NODE_ENV=dev tsc --watch\" \"tsc-alias --watch\" \"nodemon --inspect --inspect-port 9309 -q dist/index.js\"",
-    "prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write",
-    "lint": "eslint . --ext .ts",
-    "prepare": "husky install"
-  },
-  "devDependencies": {
-    "@types/express": "^4.17.17",
-    "@types/node": "^18.11.19",
-    "@typescript-eslint/eslint-plugin": "^5.59.7",
-    "@typescript-eslint/parser": "^5.59.7",
-    "concurrently": "^7.6.0",
-    "eslint": "^8.41.0",
-    "eslint-config-prettier": "^8.8.0",
-    "eslint-plugin-prettier": "^4.2.1",
-    "husky": "^8.0.3",
-    "nodemon": "^2.0.20",
-    "prettier": "^2.8.8",
-    "tsc-alias": "^1.8.6"
-  },
-  "dependencies": {
-    "@alch/alchemy-web3": "^1.4.7",
-    "@desci-labs/desci-models": "0.1.8",
-    "@supabase/supabase-js": "^2.24.0",
-    "axios": "^1.3.2",
-    "dotenv": "^16.0.3",
-    "express": "^4.18.2",
-    "multiformats": "^9.6.4",
-    "pino": "^8.14.1",
-    "pino-http": "^8.3.3",
-    "pino-pretty": "^10.0.0",
-    "typescript": "^4.9.5",
-    "url-safe-base64": "^1.2.0"
-  }
+    "scripts": {
+        "build": "tsc && tsc-alias",
+        "start": "node dist/index.js",
+        "t": "tsc-alias --watch .",
+        "dev": "tsc && (concurrently \"NODE_ENV=develop tsc -w\" \"tsc-alias -w\" \"nodemon --inspect --inspect-port 9309 -q dist/index.js\")",
+        "prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write",
+        "lint": "eslint . --ext .ts",
+        "prepare": "husky install"
+    },
+    "devDependencies": {
+        "@types/express": "^4.17.17",
+        "@types/node": "^18.11.19",
+        "@typescript-eslint/eslint-plugin": "^5.59.7",
+        "@typescript-eslint/parser": "^5.59.7",
+        "concurrently": "^7.6.0",
+        "eslint": "^8.41.0",
+        "eslint-config-prettier": "^8.8.0",
+        "eslint-plugin-prettier": "^4.2.1",
+        "husky": "^8.0.3",
+        "nodemon": "^2.0.20",
+        "prettier": "^2.8.8",
+        "tsc-alias": "^1.8.6"
+    },
+    "dependencies": {
+        "@alch/alchemy-web3": "^1.4.7",
+        "@desci-labs/desci-models": "0.1.8",
+        "@supabase/supabase-js": "^2.24.0",
+        "axios": "^1.3.2",
+        "dotenv": "^16.0.3",
+        "express": "^4.18.2",
+        "multiformats": "^9.6.4",
+        "pino": "^8.14.1",
+        "pino-http": "^8.3.3",
+        "pino-pretty": "^10.0.0",
+        "typescript": "^4.9.5",
+        "url-safe-base64": "^1.2.0"
+    }
 }
