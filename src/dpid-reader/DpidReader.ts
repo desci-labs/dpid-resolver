@@ -205,10 +205,12 @@ export class DpidReader {
                 const CID_MAP: { [key: string]: string } = {
                     bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4: "https://maritime.sealstorage.io/ipfs",
                 };
-                const defaultGateway = DEFAULT_IPFS_GATEWAY.replace(/\/ipfs$/, "");
+                const defaultGateway = DEFAULT_IPFS_GATEWAY;
                 const selectedGateway =
                     (dataSuffix!.length > 0 ? CID_MAP[dataBucket.payload.cid] : defaultGateway) || defaultGateway;
-                const dagTestURl = `${selectedGateway}/api/v0/dag/get?arg=${arg}`;
+                const dagTestURl = `${
+                    selectedGateway === defaultGateway ? selectedGateway.replace(/\/ipfs$/, "") : selectedGateway
+                }/api/v0/dag/get?arg=${arg}`;
                 console.log(dagTestURl, "dagTestURl");
                 try {
                     const { data } = await axios({ method: "POST", url: dagTestURl, httpsAgent: agent });
