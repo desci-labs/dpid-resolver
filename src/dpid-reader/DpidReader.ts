@@ -200,23 +200,27 @@ export class DpidReader {
                     .replace(
                         "bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4/Data",
                         "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
+                    )
+                    .replace(
+                        "bafybeibi6wxfwa6mw5xlctezx2alaq4ookmld25pfqy3okbnfz4kkxtk4a/Data",
+                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
                     );
+                logger.info({ arg, dataBucket }, "arg");
 
                 const CID_MAP: { [key: string]: string } = {
-                    bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4: "https://maritime.sealstorage.io/ipfs",
+                    bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4: "https://ipfs.io/ipfs",
+                    bafybeibi6wxfwa6mw5xlctezx2alaq4ookmld25pfqy3okbnfz4kkxtk4a: "https://ipfs.io/ipfs",
                 };
                 const defaultGateway = DEFAULT_IPFS_GATEWAY;
                 const selectedGateway =
                     (dataSuffix!.length > 0 ? CID_MAP[dataBucket.payload.cid] : defaultGateway) || defaultGateway;
-                const dagTestURl = `${
-                    selectedGateway === defaultGateway ? selectedGateway.replace(/\/ipfs$/, "") : selectedGateway
-                }/api/v0/dag/get?arg=${arg}`;
+                const dagTestURl = `${selectedGateway.replace(/\/ipfs$/, "")}/api/v0/dag/get?arg=${arg}`;
                 console.log(dagTestURl, "dagTestURl");
                 try {
-                    const { data } = await axios({ method: "POST", url: dagTestURl, httpsAgent: agent });
+                    const { data } = await axios({ method: "POST", url: dagTestURl }); // , httpsAgent: agent });
                     console.log("posted");
                     if (!data.Data || data.Data["/"].bytes !== "CAE") {
-                        return `${selectedGateway}/${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`;
+                        return `${selectedGateway}/${arg}`;
                     } else {
                         return data;
                     }
