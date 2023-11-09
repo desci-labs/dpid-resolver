@@ -129,7 +129,11 @@ export class DpidReader {
 
         // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic
         const cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version!.substring(1)) - 1 : version;
-        const redir = `https://nodes${prefix === "beta-dev" ? "-dev" : ""}.desci.com/${[uuid, cleanVersion, suffix]
+        const redir = `https://nodes${prefix === "beta-dev" ? "-dev" : ""}.desci.com/dpid/${[
+            request.dpid,
+            cleanVersion,
+            suffix,
+        ]
             .filter(Boolean)
             .join("/")}`;
         logger.info({ output }, "[dpid:resolve]");
