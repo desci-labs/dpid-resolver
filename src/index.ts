@@ -1,13 +1,13 @@
 import dotenv from "dotenv";
 dotenv.config({ path: "../" });
 import express, { Express, Request, Response } from "express";
-import { DataResponse, DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
+import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
 import api from "./api";
-import logger from "logger";
+import logger from "./logger";
 import pinoHttp from "pino-http";
-import analytics, { LogEventType } from "analytics";
+import analytics, { LogEventType } from "./analytics";
 
-const app: Express = express();
+export const app: Express = express();
 const port = process.env.PORT || 5460;
 
 app.use(pinoHttp({ logger }));

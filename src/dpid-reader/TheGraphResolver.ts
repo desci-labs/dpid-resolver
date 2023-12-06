@@ -1,5 +1,6 @@
+import { SortDirection } from "api/v1/list";
 import axios from "axios";
-import parentLogger from "logger";
+import parentLogger from "../logger";
 const logger = parentLogger.child({ module: "TheGraphResolver" });
 
 /**
@@ -19,13 +20,21 @@ const logger = parentLogger.child({ module: "TheGraphResolver" });
     ]
   }
  */
-export const getAllDpidRegisrations = async (url: string, prefix: string) => {
+export const getAllDpidRegisrations = async (
+    url: string,
+    prefix: string,
+    page: number,
+    size: number,
+    orderDirection: SortDirection = "desc"
+) => {
     const q = `
   {
     registers(
       where: {prefix: "${prefix}"}
       orderBy: entryId
-      orderDirection: desc
+      orderDirection: ${orderDirection},
+      first: ${size},
+      skip: ${(page - 1) * size}
     ) {
       transactionHash
       entryId
