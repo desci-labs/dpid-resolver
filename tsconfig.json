@@ -1,7 +1,6 @@
 {
     "compilerOptions": {
         /* Visit https://aka.ms/tsconfig to read more about this file */
-
         "target": "es2016",
         "module": "commonjs",
         "resolveJsonModule": true,
@@ -10,6 +9,9 @@
         "forceConsistentCasingInFileNames": true,
         "strict": true,
         "skipLibCheck": true,
-        "baseUrl": "src/"
-    }
+        "baseUrl": "./src",
+    },
+    "include": [
+        "src/**/*"
+    ],
 }

@@ -17,7 +17,7 @@ import {
     ResearchObjectV1Component,
     RoCrateTransformer,
 } from "@desci-labs/desci-models";
-import parentLogger from "logger";
+import parentLogger from "../logger";
 const logger = parentLogger.child({ module: "DpidReader" });
 export interface DpidRequest {
     dpid: string;
@@ -128,7 +128,11 @@ export class DpidReader {
         const output = { msg: `beta.dpid.org resolver`, params: request, uuid };
 
         // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic
-        const cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version!.substring(1)) - 1 : version;
+        const cleanVersion: string | undefined = !version
+            ? undefined
+            : version?.substring(0, 1) == "v"
+            ? version
+            : `v${parseInt(version || "0") + 1}`;
         const redir = `https://nodes${prefix === "beta-dev" ? "-dev" : ""}.desci.com/dpid/${[
             request.dpid,
             cleanVersion,
