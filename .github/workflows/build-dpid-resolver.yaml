@@ -29,7 +29,6 @@ jobs:
               with:
                   node-version: "16"
             - run: npm ci
-            - run: npx playwright install --with-deps
             - name: Run tests
               run: npm run test
     build-and-push:
