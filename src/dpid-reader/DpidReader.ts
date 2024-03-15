@@ -56,10 +56,22 @@ export const DEFAULT_IPFS_GATEWAY = "https://ipfs.desci.com/ipfs";
 // the value of string "beta" in bytes32 encoded as hex
 export const PREFIX_HARDCODE_BETA = "0x6265746100000000000000000000000000000000000000000000000000000000";
 
-export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } = {
-    beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes",
-    __registry: "https://graph-goerli-stage.desci.com/subgraphs/name/dpid-registry",
-};
+export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } =
+    process.env.DPID_ENV === "dev"
+        ? {
+              beta: "https://graph-sepolia-dev.desci.com/subgraphs/name/nodes",
+              __registry: "https://graph-sepolia-dev.desci.com/subgraphs/name/dpid-registry",
+          }
+        : {
+              beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes",
+              __registry: "https://graph-goerli-stage.desci.com/subgraphs/name/dpid-registry",
+          };
+
+logger.info({
+    THE_GRAPH_RESOLVER_URL,
+    PREFIX_HARDCODE_BETA,
+    DEFAULT_IPFS_GATEWAY,
+});
 
 interface ContractConfig {
     address: string;
@@ -100,6 +112,7 @@ export const hexToCid = (hexCid: string) => {
 export interface DataResponse {
     data: object;
 }
+// TODO: remove sealstorage specific cert, no longer needed
 const caBundle = fs.readFileSync("ssl/sealstorage-bundle.crt");
 const agent = new https.Agent({ ca: caBundle, rejectUnauthorized: false });
 export class DpidReader {
@@ -205,16 +218,19 @@ export class DpidReader {
 
                 const arg = `${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`
                     .replace("?raw", "")
+                    // temporary logic to reroute to a different IPFS gateway for certain datasets
                     .replace(
                         "bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4/Data",
                         "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
                     )
+                    // temporary logic to reroute to a different IPFS gateway for certain datasets
                     .replace(
                         "bafybeibi6wxfwa6mw5xlctezx2alaq4ookmld25pfqy3okbnfz4kkxtk4a/Data",
                         "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
                     );
                 logger.info({ arg, dataBucket }, "arg");
 
+                // temporary logic to reroute to a different IPFS gateway for certain datasets
                 const CID_MAP: { [key: string]: string } = {
                     bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4: "https://ipfs.io/ipfs",
                     bafybeibi6wxfwa6mw5xlctezx2alaq4ookmld25pfqy3okbnfz4kkxtk4a: "https://ipfs.io/ipfs",
