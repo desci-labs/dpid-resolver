@@ -51,6 +51,7 @@ app.get("/*", async (req: Request, res: Response) => {
             prefix,
             raw: isRaw,
             jsonld: isJsonld,
+            domain: hostname,
         };
 
         analytics.log({

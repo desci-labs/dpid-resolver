@@ -27,6 +27,7 @@ export interface DpidRequest {
     prefix: string;
     raw?: boolean;
     jsonld?: boolean;
+    domain?: string;
 }
 
 // export const encodeBase64UrlSafe = (bytes: Buffer) => {
@@ -137,7 +138,7 @@ export class DpidReader {
     };
 
     private static transformWeb = async (result: DpidResult, request: DpidRequest) => {
-        const { prefix, suffix, version } = request;
+        const { prefix, suffix, version, domain } = request;
         const uuid = result.id64;
         const output = { msg: `beta.dpid.org resolver`, params: request, uuid };
 
@@ -147,13 +148,9 @@ export class DpidReader {
             : version?.substring(0, 1) == "v"
             ? version
             : `v${parseInt(version || "0") + 1}`;
-        const redir = `https://nodes${prefix === "beta-dev" ? "-dev" : ""}.desci.com/dpid/${[
-            request.dpid,
-            cleanVersion,
-            suffix,
-        ]
-            .filter(Boolean)
-            .join("/")}`;
+        const redir = `https://nodes${
+            prefix === "beta-dev" || domain === "dev-beta.dpid.org" ? "-dev" : ""
+        }.desci.com/dpid/${[request.dpid, cleanVersion, suffix].filter(Boolean).join("/")}`;
         logger.info({ output }, "[dpid:resolve]");
         return redir;
     };
