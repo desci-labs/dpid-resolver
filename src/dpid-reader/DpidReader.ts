@@ -1,7 +1,8 @@
-const RPC_URL = "https://eth-goerli.g.alchemy.com/v2/GWLETGKsYgp0W7Z2IO8__3BEOM2KXiP8";
+const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Dg4eT90opKOFZ7w-YCxVwX9O-sriKn0N";
 //'https://goerli.infura.io/v3/';
 import { AlchemyEth, createAlchemyWeb3 } from "@alch/alchemy-web3";
-import contract from "../deployments/goerli/config.json";
+import goerliContract from "../deployments/goerli/config.json";
+import sepoliaDevContract from "../deployments/sepoliaDev/config.json";
 import { encode, decode } from "url-safe-base64";
 import { getIndexedResearchObjects } from "./TheGraphResolver";
 import { base16 } from "multiformats/bases/base16";
@@ -119,7 +120,7 @@ export class DpidReader {
     static read = async ({ dpid, version, suffix, prefix }: DpidRequest): Promise<DpidResult> => {
         const web3 = createAlchemyWeb3(RPC_URL);
 
-        const dpidRegistryContract = new web3.eth.Contract(contract.abi as any, contract.address);
+        const dpidRegistryContract = new web3.eth.Contract(sepoliaDevContract.abi as any, sepoliaDevContract.address);
         const targetUuid = await dpidRegistryContract.methods.get(PREFIX_HARDCODE_BETA, dpid).call();
         logger.info({ targetUuid }, "got uuid");
 
