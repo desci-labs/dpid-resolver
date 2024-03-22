@@ -64,6 +64,11 @@ export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } =
               beta: "https://graph-sepolia-dev.desci.com/subgraphs/name/nodes",
               __registry: "https://graph-sepolia-dev.desci.com/subgraphs/name/dpid-registry",
           }
+        : process.env.DPID_ENV === "staging"
+        ? {
+              beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+              __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
+          }
         : {
               beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes",
               __registry: "https://graph-goerli-stage.desci.com/subgraphs/name/dpid-registry",
@@ -148,9 +153,14 @@ export class DpidReader {
             : version?.substring(0, 1) == "v"
             ? version
             : `v${parseInt(version || "0") + 1}`;
-        const redir = `https://nodes${
-            prefix === "beta-dev" || domain === "dev-beta.dpid.org" ? "-dev" : ""
-        }.desci.com/dpid/${[request.dpid, cleanVersion, suffix].filter(Boolean).join("/")}`;
+        let environment = prefix === "beta-dev" || domain === "dev-beta.dpid.org" ? "-dev" : "";
+        if (domain === "staging-beta.dpid.org") {
+            environment = "-staging";
+        }
+
+        const redir = `https://nodes${environment}.desci.com/dpid/${[request.dpid, cleanVersion, suffix]
+            .filter(Boolean)
+            .join("/")}`;
         logger.info({ output }, "[dpid:resolve]");
         return redir;
     };

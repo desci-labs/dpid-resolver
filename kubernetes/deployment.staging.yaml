@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Service
+metadata:
+    name: dpid-resolver-dev
+    namespace: default
+spec:
+    ports:
+        - name: web
+          protocol: TCP
+          port: 80
+          targetPort: 5460
+          nodePort: 30172
+    selector:
+        App: DpidResolverStaging
+    type: LoadBalancer
+    sessionAffinity: None
+    loadBalancerSourceRanges:
+        - 190.93.240.0/20
+        - 103.31.4.0/22
+        - 188.114.96.0/20
+        - 173.245.48.0/20
+        - 103.22.200.0/22
+        - 197.234.240.0/22
+        - 198.41.128.0/17
+        - 162.158.0.0/15
+        - 131.0.72.0/22
+        - 104.16.0.0/13
+        - 103.21.244.0/22
+        - 172.64.0.0/13
+        - 141.101.64.0/18
+        - 108.162.192.0/18
+        - 104.24.0.0/14
+    externalTrafficPolicy: Cluster
+    ipFamilies:
+        - IPv4
+    ipFamilyPolicy: SingleStack
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: dpid-resolver-staging
+    labels:
+        App: DpidResolverStaging
+spec:
+    replicas: 2
+    revisionHistoryLimit: 2
+    selector:
+        matchLabels:
+            App: DpidResolverStaging
+    strategy:
+        rollingUpdate:
+            maxSurge: 25%
+            maxUnavailable: 25%
+        type: RollingUpdate
+    template:
+        metadata:
+            annotations:
+                vault.hashicorp.com/agent-inject: "true"
+                vault.hashicorp.com/agent-inject-status: "update"
+                vault.hashicorp.com/role: app-vault-reader
+                vault.hashicorp.com/agent-inject-secret-config: secrets/dpid-resolver/dev
+                vault.hashicorp.com/agent-inject-template-config: |
+                    {{- with secret "secrets/dpid-resolver/dev" -}}
+                    echo "appstart"; 
+                    export NODE_ENV=production
+                    export ENV=staging
+                    export DPID_ENV=staging
+                    export SUPABASE_URL={{ .Data.SUPABASE_URL }}
+                    export SUPABASE_KEY={{ .Data.SUPABASE_KEY }}
+                    export DEBUG_TEST=0;
+                    echo "loaded"
+                    {{- end -}}
+            labels:
+                App: DpidResolverStaging
+        spec:
+            containers:
+                - image: 523044037273.dkr.ecr.us-east-2.amazonaws.com/dpid-resolver-dev:latest
+                  name: dpid-resolver-staging
+                  command: ["/bin/bash", "-c"]
+                  args:
+                      - echo "SOURCING ENV"; source /vault/secrets/config; NODE_PATH=./dist node ./dist/index.js;
+                  ports:
+                      - containerPort: 5460
+                  resources:
+                      limits:
+                          cpu: "0.5"
+                          memory: 512Mi
+                      requests:
+                          cpu: 250m
+                          memory: 50Mi
+            serviceAccountName: "vault-auth"
