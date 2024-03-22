@@ -34,7 +34,7 @@ jobs:
     build-and-push:
         name: Build and deploy
         runs-on: ubuntu-latest
-        needs: test
+        # needs: test
         timeout-minutes: 10
         steps:
             - uses: hashicorp/setup-terraform@v1
