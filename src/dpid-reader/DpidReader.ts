@@ -1,7 +1,9 @@
-const RPC_URL = "https://eth-goerli.g.alchemy.com/v2/GWLETGKsYgp0W7Z2IO8__3BEOM2KXiP8";
+const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Dg4eT90opKOFZ7w-YCxVwX9O-sriKn0N";
 //'https://goerli.infura.io/v3/';
 import { AlchemyEth, createAlchemyWeb3 } from "@alch/alchemy-web3";
-import contract from "../deployments/goerli/config.json";
+import goerliContract from "../deployments/goerli/config.json";
+import sepoliaDevContract from "../deployments/sepoliaDev/config.json";
+import sepoliaProdContract from "../deployments/sepoliaProd/config.json";
 import { encode, decode } from "url-safe-base64";
 import { getIndexedResearchObjects } from "./TheGraphResolver";
 import { base16 } from "multiformats/bases/base16";
@@ -26,6 +28,7 @@ export interface DpidRequest {
     prefix: string;
     raw?: boolean;
     jsonld?: boolean;
+    domain?: string;
 }
 
 // export const encodeBase64UrlSafe = (bytes: Buffer) => {
@@ -56,10 +59,27 @@ export const DEFAULT_IPFS_GATEWAY = "https://ipfs.desci.com/ipfs";
 // the value of string "beta" in bytes32 encoded as hex
 export const PREFIX_HARDCODE_BETA = "0x6265746100000000000000000000000000000000000000000000000000000000";
 
-export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } = {
-    beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes",
-    __registry: "https://graph-goerli-stage.desci.com/subgraphs/name/dpid-registry",
-};
+export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } =
+    process.env.DPID_ENV === "dev"
+        ? {
+              beta: "https://graph-sepolia-dev.desci.com/subgraphs/name/nodes",
+              __registry: "https://graph-sepolia-dev.desci.com/subgraphs/name/dpid-registry",
+          }
+        : process.env.DPID_ENV === "staging"
+        ? {
+              beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+              __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
+          }
+        : {
+              beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+              __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
+          };
+
+logger.info({
+    THE_GRAPH_RESOLVER_URL,
+    PREFIX_HARDCODE_BETA,
+    DEFAULT_IPFS_GATEWAY,
+});
 
 interface ContractConfig {
     address: string;
@@ -100,13 +120,17 @@ export const hexToCid = (hexCid: string) => {
 export interface DataResponse {
     data: object;
 }
+// TODO: remove sealstorage specific cert, no longer needed
 const caBundle = fs.readFileSync("ssl/sealstorage-bundle.crt");
 const agent = new https.Agent({ ca: caBundle, rejectUnauthorized: false });
 export class DpidReader {
     static read = async ({ dpid, version, suffix, prefix }: DpidRequest): Promise<DpidResult> => {
         const web3 = createAlchemyWeb3(RPC_URL);
 
-        const dpidRegistryContract = new web3.eth.Contract(contract.abi as any, contract.address);
+        const dpidRegistryContract =
+            process.env.DPID_ENV === "dev"
+                ? new web3.eth.Contract(sepoliaDevContract.abi as any, sepoliaDevContract.address)
+                : new web3.eth.Contract(sepoliaProdContract.abi as any, sepoliaProdContract.address);
         const targetUuid = await dpidRegistryContract.methods.get(PREFIX_HARDCODE_BETA, dpid).call();
         logger.info({ targetUuid }, "got uuid");
 
@@ -123,7 +147,7 @@ export class DpidReader {
     };
 
     private static transformWeb = async (result: DpidResult, request: DpidRequest) => {
-        const { prefix, suffix, version } = request;
+        const { prefix, suffix, version, domain } = request;
         const uuid = result.id64;
         const output = { msg: `beta.dpid.org resolver`, params: request, uuid };
 
@@ -133,11 +157,12 @@ export class DpidReader {
             : version?.substring(0, 1) == "v"
             ? version
             : `v${parseInt(version || "0") + 1}`;
-        const redir = `https://nodes${prefix === "beta-dev" ? "-dev" : ""}.desci.com/dpid/${[
-            request.dpid,
-            cleanVersion,
-            suffix,
-        ]
+        let environment = prefix === "beta-dev" || domain === "dev-beta.dpid.org" ? "-dev" : "";
+        if (domain === "staging-beta.dpid.org") {
+            environment = "-staging";
+        }
+
+        const redir = `https://nodes${environment}.desci.com/dpid/${[request.dpid, cleanVersion, suffix]
             .filter(Boolean)
             .join("/")}`;
         logger.info({ output }, "[dpid:resolve]");
@@ -205,16 +230,19 @@ export class DpidReader {
 
                 const arg = `${dataBucket.payload.cid}${dataSuffix ? `/${dataSuffix}` : ""}`
                     .replace("?raw", "")
+                    // temporary logic to reroute to a different IPFS gateway for certain datasets
                     .replace(
                         "bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4/Data",
                         "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
                     )
+                    // temporary logic to reroute to a different IPFS gateway for certain datasets
                     .replace(
                         "bafybeibi6wxfwa6mw5xlctezx2alaq4ookmld25pfqy3okbnfz4kkxtk4a/Data",
                         "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
                     );
                 logger.info({ arg, dataBucket }, "arg");
 
+                // temporary logic to reroute to a different IPFS gateway for certain datasets
                 const CID_MAP: { [key: string]: string } = {
                     bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4: "https://ipfs.io/ipfs",
                     bafybeibi6wxfwa6mw5xlctezx2alaq4ookmld25pfqy3okbnfz4kkxtk4a: "https://ipfs.io/ipfs",

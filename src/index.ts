@@ -28,9 +28,10 @@ app.get("/*", async (req: Request, res: Response) => {
 
         const hostnameToPrefix: { [hostname: string]: string } = {
             "beta.dpid.org": "beta",
-            "beta-dev.dpid.org": "beta-dev",
+            "beta-dev.dpid.org": "beta",
+            "staging-beta.dpid.org": "beta",
             "dev-beta.dpid.org": "beta",
-            "dev-beta-dev.dpid": "beta-dev",
+            "dev-beta-dev.dpid": "beta",
         };
         const prefix = hostnameToPrefix[hostname] || "beta";
 
@@ -51,6 +52,7 @@ app.get("/*", async (req: Request, res: Response) => {
             prefix,
             raw: isRaw,
             jsonld: isJsonld,
+            domain: hostname,
         };
 
         analytics.log({
