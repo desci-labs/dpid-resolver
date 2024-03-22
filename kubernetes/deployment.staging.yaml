@@ -9,7 +9,6 @@ spec:
           protocol: TCP
           port: 80
           targetPort: 5460
-          nodePort: 30172
     selector:
         App: DpidResolverStaging
     type: LoadBalancer

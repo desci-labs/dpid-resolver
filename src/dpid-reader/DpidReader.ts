@@ -3,6 +3,7 @@ const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Dg4eT90opKOFZ7w-YCxVwX9O-s
 import { AlchemyEth, createAlchemyWeb3 } from "@alch/alchemy-web3";
 import goerliContract from "../deployments/goerli/config.json";
 import sepoliaDevContract from "../deployments/sepoliaDev/config.json";
+import sepoliaProdContract from "../deployments/sepoliaProd/config.json";
 import { encode, decode } from "url-safe-base64";
 import { getIndexedResearchObjects } from "./TheGraphResolver";
 import { base16 } from "multiformats/bases/base16";
@@ -70,8 +71,8 @@ export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } =
               __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
           }
         : {
-              beta: "https://graph-goerli-stage.desci.com/subgraphs/name/nodes",
-              __registry: "https://graph-goerli-stage.desci.com/subgraphs/name/dpid-registry",
+              beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+              __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
           };
 
 logger.info({
@@ -126,7 +127,10 @@ export class DpidReader {
     static read = async ({ dpid, version, suffix, prefix }: DpidRequest): Promise<DpidResult> => {
         const web3 = createAlchemyWeb3(RPC_URL);
 
-        const dpidRegistryContract = new web3.eth.Contract(sepoliaDevContract.abi as any, sepoliaDevContract.address);
+        const dpidRegistryContract =
+            process.env.DPID_ENV === "dev"
+                ? new web3.eth.Contract(sepoliaDevContract.abi as any, sepoliaDevContract.address)
+                : new web3.eth.Contract(sepoliaProdContract.abi as any, sepoliaProdContract.address);
         const targetUuid = await dpidRegistryContract.methods.get(PREFIX_HARDCODE_BETA, dpid).call();
         logger.info({ targetUuid }, "got uuid");
 
