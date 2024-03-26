@@ -172,6 +172,7 @@ export class DpidReader {
     private static transformRaw = async (result: DpidResult, request: DpidRequest): Promise<string | DataResponse> => {
         const { prefix, suffix, version } = request;
         const hex = result.id16;
+
         const output = { msg: `beta.dpid.org resolver`, params: request, hex };
 
         const graphUrl = THE_GRAPH_RESOLVER_URL[prefix];
@@ -217,8 +218,9 @@ export class DpidReader {
         ) {
             const res = await fetch(manifestLocation);
             const researchObject: ResearchObjectV1 = await res.json();
-            const dataBucketCandidate: ResearchObjectV1Component = researchObject.components[0];
-            if (dataBucketCandidate && dataBucketCandidate.type === ResearchObjectComponentType.DATA_BUCKET) {
+            const dataBucketCandidate: ResearchObjectV1Component =
+                researchObject.components.find((a) => a.name == "root") || researchObject.components[0];
+            if (dataBucketCandidate) {
                 const dataBucket: DataBucketComponent = dataBucketCandidate as DataBucketComponent;
                 let dataSuffix;
                 if (versionAsData) {
