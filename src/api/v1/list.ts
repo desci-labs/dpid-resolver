@@ -16,6 +16,7 @@ const transformGraphResult =
             id: r.id,
             recentCid: safeHexToCid(r.researchObject.versions[r.researchObject.versions.length - 1].cid),
             researchObject: {
+                owner: r.researchObject.owner,
                 id: r.researchObject.id,
                 versions: r.researchObject.versions.map((v, index) => ({
                     ...v,
