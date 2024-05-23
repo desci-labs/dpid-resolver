@@ -57,7 +57,7 @@ app.get("/*", async (req: Request, res: Response) => {
 
         analytics.log({
             dpid: parseInt(dpid),
-            version: parseInt(version!),
+            version: parseInt(version ?? "0"),
             extra: dpidRequest,
             eventType: LogEventType.DPID_GET,
         });
@@ -84,9 +84,10 @@ app.get("/*", async (req: Request, res: Response) => {
             )
         );
     } catch (err) {
+        const error = err as Error;
         res.status(400).send({
-            error: (err as any).message,
-            detail: err,
+            error: error.message,
+            detail: error,
             params: req.params,
             query: req.query,
             path: "/*",

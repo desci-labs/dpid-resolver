@@ -41,9 +41,10 @@ const logger = pino({
 });
 export default logger;
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 function omitBuffer(array: any) {
     return array.map((obj: any) => {
-        const { buffer, ...rest } = obj;
+        const { ...rest } = obj;
         return rest;
     });
 }
