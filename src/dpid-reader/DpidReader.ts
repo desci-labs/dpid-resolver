@@ -1,25 +1,22 @@
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Dg4eT90opKOFZ7w-YCxVwX9O-sriKn0N";
-//'https://goerli.infura.io/v3/';
-import { AlchemyEth, createAlchemyWeb3 } from "@alch/alchemy-web3";
-import goerliContract from "../deployments/goerli/config.json";
+import { createAlchemyWeb3 } from "@alch/alchemy-web3";
 import sepoliaDevContract from "../deployments/sepoliaDev/config.json";
 import sepoliaProdContract from "../deployments/sepoliaProd/config.json";
-import { encode, decode } from "url-safe-base64";
+import { encode } from "url-safe-base64";
 import { getIndexedResearchObjects } from "./TheGraphResolver";
 import { base16 } from "multiformats/bases/base16";
 import { CID } from "multiformats/cid";
-import fs from "fs";
-import https from "https";
 import axios from "axios";
 import {
     DataBucketComponent,
-    ResearchObject,
-    ResearchObjectComponentType,
     ResearchObjectV1,
     ResearchObjectV1Component,
     RoCrateTransformer,
 } from "@desci-labs/desci-models";
 import parentLogger from "../logger";
+
 const logger = parentLogger.child({ module: "DpidReader" });
 export interface DpidRequest {
     dpid: string;
@@ -50,7 +47,7 @@ export const convertHexTo64PID = (hex: string, hexToBytes: any) => {
     const bytes: number[] = hexToBytes(hex);
 
     const base64encoded = Buffer.from(bytes).toString("base64");
-    const base64SafePID = encode(base64encoded).replace(/[\.=]$/, "");
+    const base64SafePID = encode(base64encoded).replace(/[.=]$/, "");
     return base64SafePID;
 };
 
@@ -80,11 +77,6 @@ logger.info({
     PREFIX_HARDCODE_BETA,
     DEFAULT_IPFS_GATEWAY,
 });
-
-interface ContractConfig {
-    address: string;
-    abi: any;
-}
 
 interface DpidResult {
     id16: string;
@@ -120,11 +112,8 @@ export const hexToCid = (hexCid: string) => {
 export interface DataResponse {
     data: object;
 }
-// TODO: remove sealstorage specific cert, no longer needed
-const caBundle = fs.readFileSync("ssl/sealstorage-bundle.crt");
-const agent = new https.Agent({ ca: caBundle, rejectUnauthorized: false });
 export class DpidReader {
-    static read = async ({ dpid, version, suffix, prefix }: DpidRequest): Promise<DpidResult> => {
+    static read = async ({ dpid }: DpidRequest): Promise<DpidResult> => {
         const web3 = createAlchemyWeb3(RPC_URL);
 
         const dpidRegistryContract =
@@ -172,7 +161,6 @@ export class DpidReader {
     private static transformRaw = async (result: DpidResult, request: DpidRequest): Promise<string | DataResponse> => {
         const { prefix, suffix, version } = request;
         const hex = result.id16;
-        const output = { msg: `beta.dpid.org resolver`, params: request, hex };
 
         const graphUrl = THE_GRAPH_RESOLVER_URL[prefix];
         const graphResult: GraphResult = (await getIndexedResearchObjects(graphUrl, [hex])).researchObjects[0];
@@ -182,7 +170,7 @@ export class DpidReader {
         // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic and can pass the version identifier straight through
         let cleanVersion: number | undefined = undefined;
         if (version) {
-            cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version!.substring(1)) - 1 : parseInt(version);
+            cleanVersion = version?.substring(0, 1) == "v" ? parseInt(version.substring(1)) - 1 : parseInt(version);
         }
 
         logger.debug({ cleanVersion, version }, "CLEAN VER");
@@ -193,7 +181,7 @@ export class DpidReader {
             logger.debug({ cleanVersion }, "set clean ver");
         }
 
-        const targetVersion = graphResult.versions[graphResult.versions.length - 1 - cleanVersion!];
+        const targetVersion = graphResult.versions[graphResult.versions.length - 1 - cleanVersion];
 
         logger.info({ targetVersion }, "got target");
 
@@ -217,8 +205,9 @@ export class DpidReader {
         ) {
             const res = await fetch(manifestLocation);
             const researchObject: ResearchObjectV1 = await res.json();
-            const dataBucketCandidate: ResearchObjectV1Component = researchObject.components[0];
-            if (dataBucketCandidate && dataBucketCandidate.type === ResearchObjectComponentType.DATA_BUCKET) {
+            const dataBucketCandidate: ResearchObjectV1Component =
+                researchObject.components.find((a) => a.name == "root") || researchObject.components[0];
+            if (dataBucketCandidate) {
                 const dataBucket: DataBucketComponent = dataBucketCandidate as DataBucketComponent;
                 let dataSuffix;
                 if (versionAsData) {
@@ -249,11 +238,12 @@ export class DpidReader {
                 };
                 const defaultGateway = DEFAULT_IPFS_GATEWAY;
                 const selectedGateway =
+                    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                     (dataSuffix!.length > 0 ? CID_MAP[dataBucket.payload.cid] : defaultGateway) || defaultGateway;
                 const dagTestURl = `${selectedGateway.replace(/\/ipfs$/, "")}/api/v0/dag/get?arg=${arg}`;
                 console.log(dagTestURl, "dagTestURl");
                 try {
-                    const { data } = await axios({ method: "POST", url: dagTestURl }); // , httpsAgent: agent });
+                    const { data } = await axios({ method: "POST", url: dagTestURl });
                     console.log("posted");
                     if (!data.Data || data.Data["/"].bytes !== "CAE") {
                         return `${selectedGateway}/${arg}`;

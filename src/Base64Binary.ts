@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /*
 Copyright (c) 2011, Daniel Guerrero
 All rights reserved.
@@ -69,7 +70,7 @@ const Base64Binary = {
         if (arrayBuffer) uarray = new Uint8Array(arrayBuffer);
         else uarray = new Uint8Array(bytes);
 
-        input = input.replace(/[^A-Za-z0-9\+\/\=]/g, "");
+        input = input.replace(/[^A-Za-z0-9+/=]/g, "");
 
         for (i = 0; i < bytes; i += 3) {
             //get the 3 octects in 4 ascii chars

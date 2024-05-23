@@ -16,6 +16,7 @@ const transformGraphResult =
             id: r.id,
             recentCid: safeHexToCid(r.researchObject.versions[r.researchObject.versions.length - 1].cid),
             researchObject: {
+                owner: r.researchObject.owner,
                 id: r.researchObject.id,
                 versions: r.researchObject.versions.map((v, index) => ({
                     ...v,
@@ -66,8 +67,9 @@ export const list = async (req: Request, res: Response) => {
         ).researchObjectVersions;
 
         res.json(graphResult.map(transformGraphResult(transactionHashToDpid)));
-    } catch (err: any) {
-        res.json({ ok: false, error: err.message, path: "/api/v1/dpid" }).status(500);
-        logger.error("ERROR", err.message);
+    } catch (err) {
+        const error = err as Error;
+        res.json({ ok: false, error: error.message, path: "/api/v1/dpid" }).status(500);
+        logger.error("ERROR", error.message);
     }
 };
