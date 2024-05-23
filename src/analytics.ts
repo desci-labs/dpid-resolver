@@ -12,10 +12,11 @@ export enum LogEventType {
 export interface LogRequest {
     dpid: number;
     version: number;
-    extra: any;
+    extra: unknown;
     eventType: LogEventType;
 }
 
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
 let supabase: SupabaseClient<any, "public", any> | undefined;
 if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
     supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);

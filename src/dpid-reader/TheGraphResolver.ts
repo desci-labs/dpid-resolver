@@ -54,6 +54,7 @@ export const getAllResearchObjectsForDpidRegistrations = async (url: string, dpi
       cid
       researchObject {
         id
+        owner
         versions(orderBy: time) {
           id
           time
