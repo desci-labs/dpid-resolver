@@ -61,13 +61,13 @@ app.get("/*", async (req: Request, res: Response) => {
             extra: dpidRequest,
             eventType: LogEventType.DPID_GET,
         });
-
         const dpidResult = await DpidReader.read(dpidRequest);
         if (dpidResult.id16 == "0x0") {
             logger.error("dpid not found");
             throw new Error("dpid not found");
         }
         const redir = await DpidReader.transform(dpidResult, dpidRequest);
+        // debugger;
         // res.send({ output, redir });
         if (dpidRequest.jsonld) {
             res.setHeader("Content-Type", "application/ld+json").send(redir);

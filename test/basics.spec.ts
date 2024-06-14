@@ -180,7 +180,7 @@ describe("dPID resolution", function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46";
+                    const expected = "https://nodes.desci.com/dpid/46/attestations/scientific-manuscript";
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err) => {
