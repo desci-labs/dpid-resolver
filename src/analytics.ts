@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 import { SupabaseClient, createClient } from "@supabase/supabase-js";
-import parentLogger from "./logger";
+import parentLogger from "./logger.js";
 const logger = parentLogger.child({ module: "analytics" });
 
 export enum LogEventType {

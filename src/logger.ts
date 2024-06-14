@@ -1,4 +1,4 @@
-import pino from "pino";
+import { pino } from "pino";
 import dotenv from "dotenv";
 dotenv.config();
 const logLevel = process.env.PINO_LOG_LEVEL || "trace";

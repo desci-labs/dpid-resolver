@@ -1,11 +1,11 @@
 import dotenv from "dotenv";
 dotenv.config({ path: "../" });
-import express, { Express, Request, Response } from "express";
-import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
-import api from "./api";
-import logger from "./logger";
-import pinoHttp from "pino-http";
-import analytics, { LogEventType } from "./analytics";
+import express, { type Express, type Request, type Response } from "express";
+import { DpidReader, type DpidRequest } from "./dpid-reader/DpidReader.js";
+import api from "./api/index.js";
+import logger from "./logger.js";
+import { pinoHttp } from "pino-http";
+import analytics, { LogEventType } from "./analytics.js";
 
 export const app: Express = express();
 const port = process.env.PORT || 5460;

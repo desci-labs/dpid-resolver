@@ -1,8 +1,16 @@
-import { Request, Response } from "express";
-import { GraphResult, PREFIX_HARDCODE_BETA, THE_GRAPH_RESOLVER_URL, hexToCid } from "../../dpid-reader/DpidReader";
-import { getAllDpidRegisrations, getAllResearchObjectsForDpidRegistrations } from "../../dpid-reader/TheGraphResolver";
-import parentLogger from "../../logger";
-import analytics, { LogEventType } from "../../analytics";
+import { type Request, type Response } from "express";
+import {
+    type GraphResult,
+    PREFIX_HARDCODE_BETA,
+    THE_GRAPH_RESOLVER_URL,
+    hexToCid,
+} from "../../dpid-reader/DpidReader.js";
+import {
+    getAllDpidRegisrations,
+    getAllResearchObjectsForDpidRegistrations,
+} from "../../dpid-reader/TheGraphResolver.js";
+import parentLogger from "../../logger.js";
+import analytics, { LogEventType } from "../../analytics.js";
 const logger = parentLogger.child({ module: "api/v1/list" });
 
 const safeHexToCid = (hex: string) => {

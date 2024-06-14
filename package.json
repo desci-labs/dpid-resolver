@@ -1,6 +1,7 @@
 {
+    "type": "module",
     "scripts": {
-        "build": "tsc && tsc-alias",
+        "build": "tsc",
         "start": "node dist/index.js",
         "test": "PINO_LOG_LEVEL=silent PORT=5600 mocha --require ts-node/register --recursive --exit ./test/**/*.spec.ts",
         "t": "tsc-alias --watch .",
@@ -25,11 +26,12 @@
         "nodemon": "^2.0.20",
         "prettier": "^2.8.8",
         "supertest": "^6.3.3",
-        "ts-node": "^10.9.1",
-        "tsc-alias": "^1.8.6"
+        "ts-node": "^10.9.2",
+        "typescript": "^5.4.5"
     },
     "dependencies": {
         "@alch/alchemy-web3": "^1.4.7",
+        "@desci-labs/desci-contracts": "^0.2.5-rc6",
         "@desci-labs/desci-models": "0.1.8",
         "@supabase/supabase-js": "^2.24.0",
         "axios": "^1.3.2",
@@ -39,7 +41,6 @@
         "pino": "^8.14.1",
         "pino-http": "^8.3.3",
         "pino-pretty": "^10.0.0",
-        "typescript": "^4.9.5",
         "url-safe-base64": "^1.2.0"
     }
 }

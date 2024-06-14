@@ -1,6 +1,6 @@
-import { SortDirection } from "api/v1/list";
 import axios from "axios";
-import parentLogger from "../logger";
+import parentLogger from "../logger.js";
+import type { SortDirection } from "../api/v1/list.js";
 const logger = parentLogger.child({ module: "TheGraphResolver" });
 
 /**

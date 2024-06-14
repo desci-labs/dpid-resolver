@@ -1,21 +1,23 @@
 /* eslint-disable no-console */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Dg4eT90opKOFZ7w-YCxVwX9O-sriKn0N";
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import { createAlchemyWeb3 } from "@alch/alchemy-web3";
 import sepoliaDevContract from "../deployments/sepoliaDev/config.json";
 import sepoliaProdContract from "../deployments/sepoliaProd/config.json";
 import { encode } from "url-safe-base64";
-import { getIndexedResearchObjects } from "./TheGraphResolver";
+import { getIndexedResearchObjects } from "./TheGraphResolver.js";
+// @ts-ignore
 import { base16 } from "multiformats/bases/base16";
+// @ts-ignore
 import { CID } from "multiformats/cid";
 import axios from "axios";
 import {
-    DataBucketComponent,
-    ResearchObjectV1,
-    ResearchObjectV1Component,
+    type DataBucketComponent,
+    type ResearchObjectV1,
+    type ResearchObjectV1Component,
     RoCrateTransformer,
 } from "@desci-labs/desci-models";
-import parentLogger from "../logger";
+import parentLogger from "../logger.js";
 
 const logger = parentLogger.child({ module: "DpidReader" });
 export interface DpidRequest {
@@ -28,21 +30,8 @@ export interface DpidRequest {
     domain?: string;
 }
 
-// export const encodeBase64UrlSafe = (bytes: Buffer) => {
-//     return encode(Buffer.from(bytes).toString('base64'));
-//   };
-// export const convertUUIDToHex = (uuid: string) => {
-//   const decoded = decode(uuid + ".");
-//   const buffer = Base64Binary.decodeArrayBuffer(decoded).slice(0, 32);
-//   let base64UuidToBase16 = Buffer.from(buffer).toString("hex");
-//   base64UuidToBase16 =
-//     "0x" +
-//     (base64UuidToBase16.length % 2 == 0
-//       ? base64UuidToBase16
-//       : "0" + base64UuidToBase16);
+const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Dg4eT90opKOFZ7w-YCxVwX9O-sriKn0N";
 
-//   return base64UuidToBase16;
-// };
 export const convertHexTo64PID = (hex: string, hexToBytes: any) => {
     const bytes: number[] = hexToBytes(hex);
 
