@@ -4,14 +4,16 @@
         "module": "nodenext",
         "verbatimModuleSyntax": true,
         "resolveJsonModule": true,
-        "outDir": "./dist",
         "forceConsistentCasingInFileNames": true,
         "strict": true,
         "inlineSources": true,
         "inlineSourceMap": true
         "skipLibCheck": true
+
+        "outDir": "./dist",
     },
     "include": [
-        "src/**/*"
+        "src/**/*",
+        "test/**/*"
     ]
 }
