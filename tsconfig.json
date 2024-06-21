@@ -10,8 +10,8 @@
         "strict": true,
         "skipLibCheck": true,
         "baseUrl": "./src",
+        "inlineSources": true,
+        "inlineSourceMap": true
     },
-    "include": [
-        "src/**/*"
-    ],
+    "include": ["src/**/*"]
 }

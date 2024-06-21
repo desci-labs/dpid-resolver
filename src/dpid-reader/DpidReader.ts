@@ -138,14 +138,24 @@ export class DpidReader {
     private static transformWeb = async (result: DpidResult, request: DpidRequest) => {
         const { prefix, suffix, version, domain } = request;
         const uuid = result.id64;
+        // debugger;
         const output = { msg: `beta.dpid.org resolver`, params: request, uuid };
 
         // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic
-        const cleanVersion: string | undefined = !version
+        let cleanVersion: string | undefined = !version
             ? undefined
             : version?.substring(0, 1) == "v"
             ? version
             : `v${parseInt(version || "0") + 1}`;
+
+        if (cleanVersion === "vNaN") {
+            /**
+             ** Not a valid version, so pass along the original string the user entered, it may route to other
+             ** codex entities or the DPID may be an alias to another external non research object entity.
+             */
+            cleanVersion = version;
+        }
+
         let environment = prefix === "beta-dev" || domain === "dev-beta.dpid.org" ? "-dev" : "";
         if (domain === "staging-beta.dpid.org") {
             environment = "-staging";
