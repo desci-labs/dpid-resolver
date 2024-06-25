@@ -26,7 +26,7 @@ export type ResolveCodexResponse =
     | ManifestCidThing
     | {
           error: string;
-          details: any;
+          details: unknown;
           params: ResolveCodexParams;
           path: typeof MODULE_PATH;
       };

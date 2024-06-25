@@ -26,7 +26,7 @@ export type ResolveDpidResult = {
 
 export type ResolveDpidError = {
     error: string;
-    details: any;
+    details: unknown;
     params: ResolveDpidRequest;
     path: typeof MODULE_PATH;
 };
@@ -37,7 +37,7 @@ export type ResolveDpidError = {
 export const resolveDpidHandler = async (
     req: Request<ResolveDpidRequest>,
     res: Response<ResolveDpidResponse>,
-): Promise<any> => {
+): Promise<typeof res> => {
     logger.info(
         {
             params: req.params,

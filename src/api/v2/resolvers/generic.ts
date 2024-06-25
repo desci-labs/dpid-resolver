@@ -29,7 +29,7 @@ export type ResolveGenericQueryParams = {
 
 export type ErrorResponse = {
     error: string;
-    details: any;
+    details: unknown;
     params: Record<string, string>;
     query: Record<string, string>;
     path: typeof MODULE_PATH;
@@ -37,29 +37,25 @@ export type ErrorResponse = {
 
 export type SuccessResponse =
     | ResearchObjectV1 // raw request on plain dPID, i.e. no DAG path
-    | any // in case of directly returning an UnixFS data node
-    | void; // either redirect to a file on IPFS_GATEWAY_URL, or view in the webapp
+    | unknown; // in case of directly returning an UnixFS data node
 
 export type ResolveGenericResponse = SuccessResponse | ErrorResponse;
 
 /**
- * Resolve a streamID (root node), commitID (specific version),
- * or version index of a root node. Will redirect to Nodes as viewer,
+ * Resolve a dPID path. Will redirect to Nodes as viewer,
  * unless the `&raw` query parameter is set in the URL.
  *
- * @returns response with the stream state
- * @throws if id is an invalid stream or commit ID
+ * @returns response with the target data, void in the case of a redirect
  */
 export const resolveGenericHandler = async (
     req: Request<ResolveGenericParams, unknown, undefined, ResolveGenericQueryParams>,
     res: Response<ResolveGenericResponse>,
-): Promise<any> => {
+): Promise<typeof res | void> => {
     const path = req.params[0];
     const query = req.query;
 
     if (path.includes("favicon.ico")) {
-        res.status(404).send();
-        return;
+        return res.status(404).send();
     }
 
     const baseError = {
@@ -263,6 +259,7 @@ const getVersionIndex = (versionString: string): number => {
  */
 const MAGIC_UNIXFS_DIR_FLAG = "CAE";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const magicIsUnixDir = (mysteriousData: any) => mysteriousData.Data?.["/"]?.bytes === MAGIC_UNIXFS_DIR_FLAG;
 
 const rBucketRefHead = /^(root|data)\/?/;
