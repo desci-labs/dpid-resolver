@@ -1,10 +1,9 @@
+import { describe, it } from "vitest";
 import request from "supertest";
-import { describe, it } from "mocha";
-import { app } from "../src/index";
 import assert from "assert";
+import { app } from "../src/index.js";
 
-describe("dPID resolution", function () {
-    this.timeout(3000);
+describe("dPID resolution", { timeout: 3_000 }, function () {
     describe("web resolution (for humans)", () => {
         it("should handle a plain dpid", async () => {
             await request(app)

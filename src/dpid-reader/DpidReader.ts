@@ -2,8 +2,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import { createAlchemyWeb3 } from "@alch/alchemy-web3";
-import sepoliaDevContract from "../deployments/sepoliaDev/config.json";
-import sepoliaProdContract from "../deployments/sepoliaProd/config.json";
+import sepoliaDevContract from "../deployments/sepoliaDev/config.json" assert { type: "json" };
+import sepoliaProdContract from "../deployments/sepoliaProd/config.json" assert { type: "json" };
 import { encode } from "url-safe-base64";
 import { getIndexedResearchObjects } from "./TheGraphResolver.js";
 // @ts-ignore
@@ -52,14 +52,14 @@ export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } =
               __registry: "https://graph-sepolia-dev.desci.com/subgraphs/name/dpid-registry",
           }
         : process.env.DPID_ENV === "staging"
-        ? {
-              beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
-              __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
-          }
-        : {
-              beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
-              __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
-          };
+          ? {
+                beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+                __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
+            }
+          : {
+                beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+                __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
+            };
 
 logger.info({
     THE_GRAPH_RESOLVER_URL,
@@ -186,7 +186,7 @@ export class DpidReader {
 
         if (!targetVersion || !targetVersion.cid) {
             throw new Error(
-                "incorrect version, to get the first version use either 'v1' or '0', to get the second version use either 'v2' or '1', to get the latest, don't pass any suffix"
+                "incorrect version, to get the first version use either 'v1' or '0', to get the second version use either 'v2' or '1', to get the latest, don't pass any suffix",
             );
         }
 
@@ -221,12 +221,12 @@ export class DpidReader {
                     // temporary logic to reroute to a different IPFS gateway for certain datasets
                     .replace(
                         "bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4/Data",
-                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
+                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq",
                     )
                     // temporary logic to reroute to a different IPFS gateway for certain datasets
                     .replace(
                         "bafybeibi6wxfwa6mw5xlctezx2alaq4ookmld25pfqy3okbnfz4kkxtk4a/Data",
-                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
+                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq",
                     );
                 logger.info({ arg, dataBucket }, "arg");
 
@@ -255,7 +255,7 @@ export class DpidReader {
                 }
             }
             throw new Error(
-                "data resolution fail: data folder not found in manifest. ensure data folder has been allocated."
+                "data resolution fail: data folder not found in manifest. ensure data folder has been allocated.",
             );
         }
         // const redir = `https://nodes.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join('/')}`

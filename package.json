@@ -4,10 +4,11 @@
         "build": "tsc",
         "watch": "tsc --watch",
         "start": "node dist/index.js",
-        "test": "PINO_LOG_LEVEL=silent PORT=5600 vitest --run test/*.spec.ts",
+        "test": "PINO_LOG_LEVEL=silent PORT=5600 vitest --run test/**/*",
         "dev": "tsx --watch --inspect --inspect-port=9309 src/index.ts",
         "prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write",
-        "lint": "eslint . --ext .ts"
+        "lint": "eslint . --ext .ts --fix",
+        "tidy": "npm run prettier-format && npm run lint"
     },
     "devDependencies": {
         "@types/express": "^4.17.21",
@@ -29,11 +30,12 @@
     "dependencies": {
         "@alch/alchemy-web3": "^1.4.7",
         "@desci-labs/desci-codex-lib": "^1.1.7",
-        "@desci-labs/desci-contracts": "^0.2.5-rc6",
+        "@desci-labs/desci-contracts": "^0.2.6",
         "@desci-labs/desci-models": "^0.2.5",
         "@supabase/supabase-js": "^2.43.5",
         "axios": "^1.7.2",
         "dotenv": "^16.4.5",
+        "ethers": "^5.7.2",
         "express": "^4.19.2",
         "multiformats": "^9.6.4",
         "pino": "^9.2.0",

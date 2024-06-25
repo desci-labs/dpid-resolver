@@ -25,7 +25,7 @@ export const getAllDpidRegisrations = async (
     prefix: string,
     page: number,
     size: number,
-    orderDirection: SortDirection = "desc"
+    orderDirection: SortDirection = "desc",
 ) => {
     const q = `
   {
