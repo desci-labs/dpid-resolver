@@ -14,7 +14,7 @@ const getOptimismProvider = () => {
     return new providers.JsonRpcProvider(OPTIMISM_RPC_URL);
 };
 
-const getCeramicClient = () => {
+export const getCeramicClient = () => {
     if (!CERAMIC_URL) {
         throw new Error("CERAMIC_URL not set");
     }
