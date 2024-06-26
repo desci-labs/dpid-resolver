@@ -4,7 +4,7 @@
         "build": "tsc",
         "watch": "tsc --watch",
         "start": "node dist/index.js",
-        "test": "PINO_LOG_LEVEL=silent PORT=5600 DPID_ENV=production vitest --run --no-file-parallelism",
+        "test": "PINO_LOG_LEVEL=silent PORT=5600 vitest --config vitest.config.ts",
         "dev": "tsx --watch --inspect --inspect-port=9309 src/index.ts",
         "prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write",
         "lint": "eslint . --ext .ts --fix",

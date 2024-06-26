@@ -102,7 +102,7 @@ if (process.env.FALLBACK_RESOLVER) {
     app.get("/*", legacyResolve);
 } else {
     app.get("/*", resolveGenericHandler);
-};
+}
 
 app.listen(port, () => {
     logger.info(`⚡️[server]: Server is running at http://localhost:${port}`);

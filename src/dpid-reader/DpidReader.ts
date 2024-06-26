@@ -134,8 +134,8 @@ export class DpidReader {
         let cleanVersion: string | undefined = !version
             ? undefined
             : version?.substring(0, 1) == "v"
-            ? version
-            : `v${parseInt(version || "0") + 1}`;
+              ? version
+              : `v${parseInt(version || "0") + 1}`;
 
         if (cleanVersion === "vNaN") {
             /**

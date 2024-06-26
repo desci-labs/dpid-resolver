@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 import request from "supertest";
 import assert from "assert";
 import { app } from "../src/index.js";
+import { getNodesUrl } from "../src/util/config.js";
+
+const NODES_URL = getNodesUrl();
 
 describe("dPID resolution", { timeout: 3_000 }, function () {
     describe("web resolution (for humans)", () => {
@@ -12,7 +15,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46";
+                    const expected = `${NODES_URL}/dpid/46`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err) => {
@@ -29,7 +32,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/v1";
+                    const expected = `${NODES_URL}/dpid/46/v1`;
 
                     assert.equal(value, expected, "incorrect resolution");
                 })
@@ -47,7 +50,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/v4";
+                    const expected = `${NODES_URL}/dpid/46/v4`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -59,7 +62,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/v1";
+                    const expected = `${NODES_URL}/dpid/46/v1`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -71,7 +74,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/v3";
+                    const expected = `${NODES_URL}/dpid/46/v3`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -83,7 +86,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/attestations";
+                    const expected = `${NODES_URL}/dpid/46/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err) => {
@@ -100,7 +103,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/v2/attestations";
+                    const expected = `${NODES_URL}/dpid/46/v2/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err) => {
@@ -117,7 +120,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/v3/attestations";
+                    const expected = `${NODES_URL}/dpid/46/v3/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err) => {
@@ -134,7 +137,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/attestations/scientific-manuscript";
+                    const expected = `${NODES_URL}/dpid/46/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err) => {
@@ -151,7 +154,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/v2/attestations/scientific-manuscript";
+                    const expected = `${NODES_URL}/dpid/46/v2/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err) => {
@@ -168,7 +171,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected = "https://nodes.desci.com/dpid/46/v3/attestations/scientific-manuscript";
+                    const expected = `${NODES_URL}/dpid/46/v3/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err) => {
