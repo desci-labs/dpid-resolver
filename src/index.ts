@@ -12,6 +12,7 @@ export const app: Express = express();
 const port = process.env.PORT || 5460;
 
 app.use(pinoHttp({ logger }));
+app.use(express.json());
 
 app.use("/api", api);
 

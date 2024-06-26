@@ -1,4 +1,4 @@
-import { newCeramicClient } from "@desci-labs/desci-codex-lib";
+import { newCeramicClient, newComposeClient } from "@desci-labs/desci-codex-lib";
 import { contracts, typechain as tc } from "@desci-labs/desci-contracts";
 import { providers } from "ethers";
 
@@ -19,6 +19,14 @@ const getCeramicClient = () => {
         throw new Error("CERAMIC_URL not set");
     }
     return newCeramicClient(CERAMIC_URL);
+};
+
+export const getComposeClient = () => {
+    if (!CERAMIC_URL) {
+        throw new Error("CERAMIC_URL not set");
+    }
+
+    return newComposeClient({ ceramic: CERAMIC_URL });
 };
 
 const VALID_ENVS = ["local", "dev", "staging", "production"];
