@@ -7,10 +7,9 @@
         "forceConsistentCasingInFileNames": true,
         "strict": true,
         "inlineSources": true,
-        "inlineSourceMap": true
-        "skipLibCheck": true
-
-        "outDir": "./dist",
+        "inlineSourceMap": true,
+        "skipLibCheck": true,
+        "outDir": "./dist"
     },
     "include": [
         "src/**/*",

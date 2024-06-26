@@ -104,6 +104,107 @@ describe("dPID", { timeout: 10_000 }, function () {
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
+        it("should handle a generic attestations route", async () => {
+            await request(app)
+                .get("/46/attestations")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/attestations";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a versioned(V) generic attestations route", async () => {
+            await request(app)
+                .get("/46/v2/attestations")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/v2/attestations";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a versioned(I) generic attestations route", async () => {
+            await request(app)
+                .get("/46/2/attestations")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/v3/attestations";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a specific attestations route with an attestation slug", async () => {
+            await request(app)
+                .get("/46/attestations/scientific-manuscript")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/attestations/scientific-manuscript";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a versioned(V) attestations route with an attestation slug", async () => {
+            await request(app)
+                .get("/46/v2/attestations/scientific-manuscript")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/v2/attestations/scientific-manuscript";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a versioned(I) attestations route with an attestation slug", async () => {
+            await request(app)
+                .get("/46/2/attestations/scientific-manuscript")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/v3/attestations/scientific-manuscript";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
     });
     describe("raw resolution (for machines)", () => {
         // skipping because dev has duplicates, solve by reindexing dev sepolia graph

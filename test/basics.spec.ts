@@ -63,6 +63,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
+
         it("should handle a higher 0-indexed versioned dpid", async () => {
             await request(app)
                 .get("/46/2")
@@ -74,18 +75,120 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
+
+        it("should handle a generic attestations route", async () => {
+            await request(app)
+                .get("/46/attestations")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/attestations";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a versioned(V) generic attestations route", async () => {
+            await request(app)
+                .get("/46/v2/attestations")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/v2/attestations";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a versioned(I) generic attestations route", async () => {
+            await request(app)
+                .get("/46/2/attestations")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/v3/attestations";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a specific attestations route with an attestation slug", async () => {
+            await request(app)
+                .get("/46/attestations/scientific-manuscript")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/attestations/scientific-manuscript";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a versioned(V) attestations route with an attestation slug", async () => {
+            await request(app)
+                .get("/46/v2/attestations/scientific-manuscript")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/v2/attestations/scientific-manuscript";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
+
+        it("should handle a versioned(I) attestations route with an attestation slug", async () => {
+            await request(app)
+                .get("/46/2/attestations/scientific-manuscript")
+                .expect(302)
+                .then((res) => {
+                    const value = res.header["location"];
+
+                    const expected = "https://nodes.desci.com/dpid/46/v3/attestations/scientific-manuscript";
+                    assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
+                });
+        });
     });
     describe("raw resolution (for machines)", () => {
         // skipping because dev has duplicates, solve by reindexing dev sepolia graph
-        it.skip("should handle a versioned raw dpid", async () => {
+        it("should handle a versioned raw dpid", async () => {
             await request(app)
-                .get("/46/v4?raw")
+                .get("/46/v1?raw")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
 
                     const expected =
-                        "https://ipfs.desci.com/ipfs/bafkreibn3jhdlsdsonv25t7i2bwtrbkl3jzwjbnnwylpeih3jmmzdhsfmi";
+                        "https://ipfs.desci.com/ipfs/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u";
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -112,112 +215,16 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
             await request(app).get("/46/v4/root/exploring-lupus?raw").expect(200);
         });
 
-        it.skip("should handle a dPID path to file", async () => {
+        it("should handle a dPID path to file", async () => {
             await request(app)
-                .get("/46/v4/root/.nodeKeep?raw")
+                .get("/46/v1/root/.nodeKeep?raw")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
 
                     const expected =
-                        "https://ipfs.desci.com/ipfs/bafybeidmian2ksjtidvpghzy6iesvcjs5pd647q3rtj6znu26vr5g6axy4/.nodeKeep";
+                        "https://ipfs.desci.com/ipfs/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep";
                     assert.equal(value, expected, "incorrect resolution");
-                });
-        });
-        it("should handle a generic attestations route", async () => {
-            await request(app)
-                .get("/46/attestations")
-                .expect(302)
-                .then((res) => {
-                    const value = res.header["location"];
-
-                    const expected = "https://nodes.desci.com/dpid/46/attestations";
-                    assert.equal(value, expected, "incorrect resolution");
-                })
-                .catch((err) => {
-                    if (err) {
-                        assert.fail(err);
-                    }
-                });
-        });
-        it("should handle a versioned(V) generic attestations route", async () => {
-            await request(app)
-                .get("/46/v2/attestations")
-                .expect(302)
-                .then((res) => {
-                    const value = res.header["location"];
-
-                    const expected = "https://nodes.desci.com/dpid/46/v2/attestations";
-                    assert.equal(value, expected, "incorrect resolution");
-                })
-                .catch((err) => {
-                    if (err) {
-                        assert.fail(err);
-                    }
-                });
-        });
-        it("should handle a versioned(I) generic attestations route", async () => {
-            await request(app)
-                .get("/46/2/attestations")
-                .expect(302)
-                .then((res) => {
-                    const value = res.header["location"];
-
-                    const expected = "https://nodes.desci.com/dpid/46/v3/attestations";
-                    assert.equal(value, expected, "incorrect resolution");
-                })
-                .catch((err) => {
-                    if (err) {
-                        assert.fail(err);
-                    }
-                });
-        });
-        it("should handle a specific attestations route with an attestation slug", async () => {
-            await request(app)
-                .get("/46/attestations/scientific-manuscript")
-                .expect(302)
-                .then((res) => {
-                    const value = res.header["location"];
-
-                    const expected = "https://nodes.desci.com/dpid/46/attestations/scientific-manuscript";
-                    assert.equal(value, expected, "incorrect resolution");
-                })
-                .catch((err) => {
-                    if (err) {
-                        assert.fail(err);
-                    }
-                });
-        });
-        it("should handle a versioned(V) attestations route with an attestation slug", async () => {
-            await request(app)
-                .get("/46/v2/attestations/scientific-manuscript")
-                .expect(302)
-                .then((res) => {
-                    const value = res.header["location"];
-
-                    const expected = "https://nodes.desci.com/dpid/46/v2/attestations/scientific-manuscript";
-                    assert.equal(value, expected, "incorrect resolution");
-                })
-                .catch((err) => {
-                    if (err) {
-                        assert.fail(err);
-                    }
-                });
-        });
-        it("should handle a versioned(I) attestations route with an attestation slug", async () => {
-            await request(app)
-                .get("/46/2/attestations/scientific-manuscript")
-                .expect(302)
-                .then((res) => {
-                    const value = res.header["location"];
-
-                    const expected = "https://nodes.desci.com/dpid/46/v3/attestations/scientific-manuscript";
-                    assert.equal(value, expected, "incorrect resolution");
-                })
-                .catch((err) => {
-                    if (err) {
-                        assert.fail(err);
-                    }
                 });
         });
     });
