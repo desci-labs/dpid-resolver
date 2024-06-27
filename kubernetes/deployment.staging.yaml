@@ -57,16 +57,19 @@ spec:
                 vault.hashicorp.com/agent-inject: "true"
                 vault.hashicorp.com/agent-inject-status: "update"
                 vault.hashicorp.com/role: app-vault-reader
-                vault.hashicorp.com/agent-inject-secret-config: secrets/dpid-resolver/dev
+                vault.hashicorp.com/agent-inject-secret-config: secrets/dpid-resolver/staging
                 vault.hashicorp.com/agent-inject-template-config: |
-                    {{- with secret "secrets/dpid-resolver/dev" -}}
+                    {{- with secret "secrets/dpid-resolver/staging" -}}
                     echo "appstart"; 
-                    export NODE_ENV=production
-                    export ENV=staging
-                    export DPID_ENV=staging
+                    export NODE_ENV={{ .Data.NODE_ENV }}
                     export SUPABASE_URL={{ .Data.SUPABASE_URL }}
                     export SUPABASE_KEY={{ .Data.SUPABASE_KEY }}
-                    export DEBUG_TEST=0;
+                    
+                    export DPID_ENV={{ .Data.DPID_ENV }}
+                    export IPFS_GATEWAY={{ .Data.IPFS_GATEWAY }}
+                    export OPTIMISM_RPC_URL={{ .Data.OPTIMISM_RPC_URL }}
+                    export CERAMIC_URL={{ .Data.CERAMIC_URL }}
+                    export FALLBACK_RESOLVER={{ .Data.FALLBACK_RESOLVER }}
                     echo "loaded"
                     {{- end -}}
             labels:
@@ -77,7 +80,7 @@ spec:
                   name: dpid-resolver-staging
                   command: ["/bin/bash", "-c"]
                   args:
-                      - echo "SOURCING ENV"; source /vault/secrets/config; NODE_PATH=./dist node ./dist/index.js;
+                      - echo "SOURCING ENV"; source /vault/secrets/config; dumb-init node ./dist/index.js;
                   ports:
                       - containerPort: 5460
                   resources:

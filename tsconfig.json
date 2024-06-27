@@ -1,17 +1,18 @@
 {
     "compilerOptions": {
-        /* Visit https://aka.ms/tsconfig to read more about this file */
-        "target": "es2016",
-        "module": "commonjs",
+        // https://www.typescriptlang.org/docs/handbook/modules/guides/choosing-compiler-options.html
+        "module": "nodenext",
+        "verbatimModuleSyntax": true,
         "resolveJsonModule": true,
-        "outDir": "./dist",
-        "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
         "strict": true,
-        "skipLibCheck": true,
-        "baseUrl": "./src",
         "inlineSources": true,
-        "inlineSourceMap": true
+        "inlineSourceMap": true,
+        "skipLibCheck": true,
+        "outDir": "./dist"
     },
-    "include": ["src/**/*"]
+    "include": [
+        "src/**/*",
+        "test/**/*"
+    ]
 }

@@ -1,20 +1,22 @@
 import dotenv from "dotenv";
 dotenv.config({ path: "../" });
-import express, { Express, Request, Response } from "express";
-import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
-import api from "./api";
-import logger from "./logger";
-import pinoHttp from "pino-http";
-import analytics, { LogEventType } from "./analytics";
+import express, { type Express, type Request, type Response } from "express";
+import { DpidReader, type DpidRequest } from "./dpid-reader/DpidReader.js";
+import api from "./api/index.js";
+import logger from "./logger.js";
+import { pinoHttp } from "pino-http";
+import analytics, { LogEventType } from "./analytics.js";
+import { resolveGenericHandler } from "./api/v2/resolvers/generic.js";
 
 export const app: Express = express();
 const port = process.env.PORT || 5460;
 
 app.use(pinoHttp({ logger }));
+app.use(express.json());
 
 app.use("/api", api);
 
-app.get("/*", async (req: Request, res: Response) => {
+const legacyResolve = async (req: Request, res: Response) => {
     try {
         const path = req.params[0];
 
@@ -61,13 +63,13 @@ app.get("/*", async (req: Request, res: Response) => {
             extra: dpidRequest,
             eventType: LogEventType.DPID_GET,
         });
+
         const dpidResult = await DpidReader.read(dpidRequest);
         if (dpidResult.id16 == "0x0") {
             logger.error("dpid not found");
             throw new Error("dpid not found");
         }
         const redir = await DpidReader.transform(dpidResult, dpidRequest);
-        // debugger;
         // res.send({ output, redir });
         if (dpidRequest.jsonld) {
             res.setHeader("Content-Type", "application/ld+json").send(redir);
@@ -80,8 +82,8 @@ app.get("/*", async (req: Request, res: Response) => {
         res.redirect(
             (redir as string).replace(
                 "bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4/Data",
-                "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
-            )
+                "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq",
+            ),
         );
     } catch (err) {
         const error = err as Error;
@@ -94,7 +96,13 @@ app.get("/*", async (req: Request, res: Response) => {
         });
         logger.error({ err }, "GET /* wildcard-error");
     }
-});
+};
+
+if (process.env.FALLBACK_RESOLVER) {
+    app.get("/*", legacyResolve);
+} else {
+    app.get("/*", resolveGenericHandler);
+}
 
 app.listen(port, () => {
     logger.info(`⚡️[server]: Server is running at http://localhost:${port}`);

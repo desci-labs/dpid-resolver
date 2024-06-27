@@ -1,7 +1,12 @@
-import pino from "pino";
+import { pino } from "pino";
 import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import path from "path";
 dotenv.config();
 const logLevel = process.env.PINO_LOG_LEVEL || "trace";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const devTransport = {
     target: "pino-pretty",
