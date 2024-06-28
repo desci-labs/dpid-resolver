@@ -98,7 +98,8 @@ const legacyResolve = async (req: Request, res: Response) => {
     }
 };
 
-if (process.env.FALLBACK_RESOLVER) {
+if (process.env.FALLBACK_RESOLVER === "1") {
+    logger.warn({ FALLBACK_RESOLVER: process.env.FALLBACK_RESOLVER }, "Fallback configured, using legacy resolution");
     app.get("/*", legacyResolve);
 } else {
     app.get("/*", resolveGenericHandler);
