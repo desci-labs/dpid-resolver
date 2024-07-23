@@ -63,13 +63,13 @@ export const resolveCodexHandler = async (
             // TODO filter error for stream not found from technical issues
             logger.error({ streamId, versionIx, err }, "failed to resolve stream");
             return res.status(404).send({
-                error: "Could not resolve",
+                error: "Could not resolve; does stream/version exist?",
                 details: err,
                 params: req.params,
                 path: MODULE_PATH,
             });
-        }
-    }
+        };
+    };
 
     return res.status(200).send(result);
 };
@@ -77,7 +77,11 @@ export const resolveCodexHandler = async (
 /** TODO lookup by model to ensure shape, this is a bit dirty */
 export type ManifestCidThing = { manifest: string };
 
-export const resolveCodex = async (streamId: string, versionIx: number | undefined): Promise<ManifestCidThing> => {
+export const resolveCodex = async (
+    streamId: string,
+    versionIx: number | undefined
+): Promise<ManifestCidThing> => {
+    logger.info({ streamId, versionIx }, "resolving stream");
     const client = getCeramicClient();
 
     // Wrapper for StreamID or CommitID, throws if id is invalid stream/commit
@@ -99,7 +103,7 @@ export const resolveCodex = async (streamId: string, versionIx: number | undefin
         result = (await resolveState(client, codexPid)) as ManifestCidThing;
     } else {
         throw new Error("ambiguous reference");
-    }
+    };
 
     return result;
 };

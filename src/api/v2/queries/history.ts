@@ -1,6 +1,11 @@
 import type { Request, Response } from "express";
 import { getCeramicClient } from "../../../util/config.js";
 import { resolveHistory, type CeramicClient } from "@desci-labs/desci-codex-lib";
+import parentLogger from "../../../logger.js";
+
+const logger = parentLogger.child({
+   module: "api/v2/queries/history",
+});
 
 export type HistoryQueryRequest = {
     streamIds?: string[];
@@ -40,8 +45,11 @@ export const historyQueryHandler = async (
     const { streamIds } = req.body;
 
     if (!Array.isArray(streamIds)) {
+        logger.error({ body: req.body }, "Request missing stream IDs");
         return res.status(400).send("Missing streamIds array in body");
-    }
+    } else {
+        logger.info({ streamIds }, "Handling history query");
+    };
 
     const ceramic = getCeramicClient();
 
@@ -58,6 +66,7 @@ export const historyQueryHandler = async (
         })),
     );
 
+    logger.info({ streamIds, result }, "History query success");
     return res.send(result);
 };
 

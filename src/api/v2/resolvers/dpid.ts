@@ -105,7 +105,7 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<Res
         } catch (e) {
             throw new DpidResolverError({
                 name: "CeramicContactFailed",
-                message: "Failed to resolve stream",
+                message: "Failed to resolve; does the dpid (or version) exist?",
                 cause: e,
             });
         }

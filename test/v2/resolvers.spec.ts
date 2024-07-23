@@ -2,11 +2,13 @@ import { describe, it } from "vitest";
 import request from "supertest";
 import assert from "assert";
 import { app } from "../../src/index.js";
-import { getNodesUrl } from "../../src/util/config.js";
+import { getIpfsGateway, getNodesUrl } from "../../src/util/config.js";
 
 const BASE = "/api/v2/resolve";
 // Set dynamically so tests can run against different environments
 const NODES_URL = getNodesUrl();
+const IPFS_URL = getIpfsGateway();
+
 describe("dPID", { timeout: 10_000 }, function () {
     describe("web resolution (for humans)", () => {
         it("should handle a plain dpid", async () => {
@@ -215,7 +217,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                     const value = res.header["location"];
 
                     const expected =
-                        "https://ipfs.desci.com/ipfs/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u";
+                        `${IPFS_URL}/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -229,7 +231,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                     const value = res.header["location"];
 
                     const expected =
-                        "https://ipfs.desci.com/ipfs/bafkreihge5qw7sc3mqc4wkf4cgpv6udtvrgipfxwyph7dhlyu6bkkt7tfq";
+                        `${IPFS_URL}/bafkreihge5qw7sc3mqc4wkf4cgpv6udtvrgipfxwyph7dhlyu6bkkt7tfq`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -254,7 +256,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                     const value = res.header["location"];
 
                     const expected =
-                        "https://ipfs.desci.com/ipfs/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep";
+                        `${IPFS_URL}/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
