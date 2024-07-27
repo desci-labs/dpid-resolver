@@ -19,6 +19,9 @@ app.use(express.json());
 
 app.use("/api", api);
 
+// Should probably check connectivity with ceramic/blockchain RPC/IPFS node
+app.use("/healthz", async (_req, res) => res.send("OK"));
+
 const legacyResolve = async (req: Request, res: Response) => {
     try {
         const path = req.params[0];
@@ -111,9 +114,6 @@ app.get("/*", (req, res) => {
         );
     }
 });
-
-// Should probably check connectivity with ceramic/blockchain RPC/IPFS node
-app.use("/healthz", async (_req, res) => res.send("OK"));
 
 app.listen(port, () => {
     logger.info(`⚡️[server]: Server is running at http://localhost:${port}`);
