@@ -216,8 +216,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected =
-                        `${IPFS_URL}/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u`;
+                    const expected = `${IPFS_URL}/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -230,8 +229,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected =
-                        `${IPFS_URL}/bafkreihge5qw7sc3mqc4wkf4cgpv6udtvrgipfxwyph7dhlyu6bkkt7tfq`;
+                    const expected = `${IPFS_URL}/bafkreihge5qw7sc3mqc4wkf4cgpv6udtvrgipfxwyph7dhlyu6bkkt7tfq`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -255,8 +253,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected =
-                        `${IPFS_URL}/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep`;
+                    const expected = `${IPFS_URL}/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });

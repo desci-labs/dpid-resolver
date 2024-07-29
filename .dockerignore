@@ -8,4 +8,3 @@ dist/
 test/
 kubernetes/
 node_modules/
-log/

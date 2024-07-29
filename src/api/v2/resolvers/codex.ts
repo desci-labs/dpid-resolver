@@ -68,8 +68,8 @@ export const resolveCodexHandler = async (
                 params: req.params,
                 path: MODULE_PATH,
             });
-        };
-    };
+        }
+    }
 
     return res.status(200).send(result);
 };
@@ -77,10 +77,7 @@ export const resolveCodexHandler = async (
 /** TODO lookup by model to ensure shape, this is a bit dirty */
 export type ManifestCidThing = { manifest: string };
 
-export const resolveCodex = async (
-    streamId: string,
-    versionIx: number | undefined
-): Promise<ManifestCidThing> => {
+export const resolveCodex = async (streamId: string, versionIx: number | undefined): Promise<ManifestCidThing> => {
     logger.info({ streamId, versionIx }, "resolving stream");
     const client = getCeramicClient();
 
@@ -103,7 +100,7 @@ export const resolveCodex = async (
         result = (await resolveState(client, codexPid)) as ManifestCidThing;
     } else {
         throw new Error("ambiguous reference");
-    };
+    }
 
     return result;
 };

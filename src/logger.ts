@@ -1,12 +1,7 @@
 import { pino } from "pino";
 import dotenv from "dotenv";
-import { fileURLToPath } from "url";
-import path from "path";
 dotenv.config();
 const logLevel = process.env.PINO_LOG_LEVEL || "trace";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const devTransport = {
     target: "pino-pretty",
@@ -16,23 +11,12 @@ const devTransport = {
     },
 };
 
-const fileTransport = {
-    target: "pino/file",
-    options: { destination: `${__dirname}/../log/server.log` },
-    level: "trace",
-};
-
 const logger = pino({
     level: logLevel,
     serializers: {
         files: omitBuffer,
     },
-    transport:
-        process.env.NODE_ENV === "production"
-            ? undefined
-            : {
-                  targets: [devTransport, fileTransport],
-              },
+    transport: process.env.NODE_ENV === "production" ? undefined : { targets: [devTransport] },
     redact: {
         paths: [
             "req.headers.cookie",
@@ -44,6 +28,7 @@ const logger = pino({
         ],
     },
 });
+
 export default logger;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

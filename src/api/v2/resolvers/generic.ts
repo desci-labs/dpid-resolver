@@ -68,8 +68,12 @@ export const resolveGenericHandler = async (
 
     const [dpid, ...rest] = path.split("/");
     if (!matchPlainDpid(dpid)) {
-        logger.error({ path }, "dpid not specified");
-        throw new Error("dpid not specified, pass dpid as route path");
+        logger.error({ path }, "invalid dpid");
+        return res.status(400).send({
+            error: "invalid dpid",
+            details: `expected valid dpid in path, got '${dpid}'`,
+            ...baseError,
+        });
     }
 
     const isRaw = query.raw !== undefined;

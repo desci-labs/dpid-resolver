@@ -105,6 +105,8 @@ if (process.env.FALLBACK_RESOLVER === "1") {
     app.get("/*", resolveGenericHandler);
 }
 
+app.use("/healthz", async (_req, res) => res.send("OK"));
+
 app.listen(port, () => {
     logger.info(`⚡️[server]: Server is running at http://localhost:${port}`);
 });
