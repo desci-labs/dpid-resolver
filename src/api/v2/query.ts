@@ -7,6 +7,6 @@ const router = Router();
 /** Query for all research objects */
 router.use("/objects", objectQueryHandler);
 /** Query for the history of one or more research objects */
-router.use("/history", historyQueryHandler);
+router.use("/history/:id?", historyQueryHandler);
 
 export default router;

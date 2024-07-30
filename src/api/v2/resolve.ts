@@ -8,7 +8,7 @@ const router = Router();
 /** Resolve dpid alias -> manifest */
 router.use("/dpid/:dpid/:versionIx?", resolveDpidHandler);
 /** Resolve streamId -> manifest */
-router.use("/codex/:streamId/:versionIx?", resolveCodexHandler);
+router.use("/codex/:streamOrCommitId/:versionIx?", resolveCodexHandler);
 /** Resolve any sensible dpid path */
 router.use("/*", resolveGenericHandler);
 

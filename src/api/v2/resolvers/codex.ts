@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import parentLogger from "../../../logger.js";
-import { newCeramicClient, pidFromStringID, resolveState } from "@desci-labs/desci-codex-lib";
+import { newCeramicClient, pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
+import { getVersions, type HistoryQueryResult } from "../queries/history.js";
 
 const CERAMIC_URL = process.env.CERAMIC_URL;
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
@@ -16,14 +17,12 @@ const getCeramicClient = () => {
 };
 
 export type ResolveCodexParams = {
-    streamId: string;
+    streamOrCommitId: string;
     versionIx?: number;
 };
 
 export type ResolveCodexResponse =
-    // TODO composeDB model query => get stream history?
-    // Otherwise, this could really be anything
-    | ManifestCidThing
+    | HistoryQueryResult
     | {
           error: string;
           details: unknown;
@@ -44,63 +43,77 @@ export const resolveCodexHandler = async (
 ): Promise<typeof res> => {
     logger.info({ ...req.params }, `resolving codex entity with ${CERAMIC_URL}`);
 
-    const { streamId, versionIx } = req.params;
+    const { streamOrCommitId, versionIx } = req.params;
 
-    let result: ManifestCidThing;
+    let codexPid: PID;
+    try {
+        codexPid = pidFromStringID(streamOrCommitId);
+    } catch (e) {
+        const errPayload = {
+            error: "Invalid stream or commit ID",
+            details: "Could not coerce ID into neither stream nor commitID",
+            params: req.params,
+            path: MODULE_PATH,
+        };
+        logger.error(errPayload, "Codex handler got invalid id");
+        return res.status(400).send(errPayload);
+    }
+    const versionByCommit = codexPid.tag === "versioned";
+
+    // If request contained a commitID, we can derive the stream ID from that
+    const streamId = versionByCommit ? codexPid.id.baseID.toString() : codexPid.id.toString();
+
+    let result: HistoryQueryResult;
     try {
         result = await resolveCodex(streamId, versionIx);
     } catch (e) {
         const err = e as Error;
-        if (err.message.includes("ambiguous reference")) {
-            // Request does not make sense, refusing to make assumptions
-            return res.status(400).send({
-                error: "Ambiguous reference",
-                details: "Send one combination of [(id: streamID), (id: commitID), (id: streamID, versionIx: integer)]",
-                params: req.params,
-                path: MODULE_PATH,
-            });
-        } else {
-            // TODO filter error for stream not found from technical issues
-            logger.error({ streamId, versionIx, err }, "failed to resolve stream");
+        // TODO filter error for stream not found from technical issues
+        logger.error({ streamId, versionIx, err }, "failed to resolve stream");
+        return res.status(404).send({
+            error: "Could not resolve; does stream/version exist?",
+            details: err,
+            params: req.params,
+            path: MODULE_PATH,
+        });
+    }
+
+    // Result contains full history, but the top level manifest is the latest
+    // entry if a versionIx wasn't passed. If a CommitID was included, set
+    // top-level manifest to the CID from the corresponding version.
+    if (versionByCommit) {
+        const commitVersion = result.versions.find(({ version }) => version === codexPid.id.toString());
+        if (!commitVersion) {
+            // This is unlikely but very weird if it occurs, since we found the
+            // stream from this commit ID
+            logger.error({ streamOrCommitId, versions: result.versions }, "CommitID not found in stream versions");
             return res.status(404).send({
-                error: "Could not resolve; does stream/version exist?",
-                details: err,
+                error: "Could not resolve, does stream/version exist?",
+                details: "CommitID not found in stream versions",
                 params: req.params,
                 path: MODULE_PATH,
             });
         }
+        result.manifest = commitVersion.manifest;
     }
 
     return res.status(200).send(result);
 };
 
-/** TODO lookup by model to ensure shape, this is a bit dirty */
-export type ManifestCidThing = { manifest: string };
-
-export const resolveCodex = async (streamId: string, versionIx: number | undefined): Promise<ManifestCidThing> => {
-    logger.info({ streamId, versionIx }, "resolving stream");
+/** Resolve full stream history */
+export const resolveCodex = async (streamId: string, versionIx?: number): Promise<HistoryQueryResult> => {
     const client = getCeramicClient();
+    const stream = await client.loadStream(streamId);
 
-    // Wrapper for StreamID or CommitID, throws if id is invalid stream/commit
-    const codexPid = pidFromStringID(streamId);
-
-    let result: { manifest: string } | undefined;
-    if (codexPid.tag === "root" && versionIx === undefined) {
-        // Request makes sense as newest state resolution
-        result = (await resolveState(client, codexPid)) as ManifestCidThing;
-    } else if (codexPid.tag === "root" && versionIx !== undefined) {
-        // Request makes sense as numerical index resolution
-        result = (await resolveState(client, {
-            tag: "indexed",
-            id: codexPid.id,
-            versionIx,
-        })) as ManifestCidThing;
-    } else if (codexPid.tag === "versioned" && versionIx === undefined) {
-        // Request makes sense as specific version resolution
-        result = (await resolveState(client, codexPid)) as ManifestCidThing;
-    } else {
-        throw new Error("ambiguous reference");
+    const versions = await getVersions(client, streamId);
+    if (versionIx && versionIx > versions.length) {
+        throw new Error("versionIx out of bounds");
     }
 
-    return result;
+    return {
+        id: streamId,
+        owner: stream.state.metadata.controllers[0].replace(/did:pkh:eip155:[0-9]+:/, ""),
+        manifest: versionIx ? versions[versionIx].manifest : (stream.content.manifest as string),
+        versions,
+    };
 };
