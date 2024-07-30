@@ -2,18 +2,15 @@ import { describe, it } from "vitest";
 import request from "supertest";
 import assert from "assert";
 import { app } from "../../src/index.js";
-import { getIpfsGateway, getNodesUrl } from "../../src/util/config.js";
 
-const BASE = "/api/v2/resolve";
-// Set dynamically so tests can run against different environments
-const NODES_URL = getNodesUrl();
-const IPFS_URL = getIpfsGateway();
+const NODES_URL = "https://nodes-dev.desci.com";
+const IPFS_URL = "https://ipfs.desci.com/ipfs";
 
 describe("dPID", { timeout: 10_000 }, function () {
     describe("web resolution (for humans)", () => {
         it("should handle a plain dpid", async () => {
             await request(app)
-                .get(BASE + "/46")
+                .get("/46")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
@@ -30,7 +27,7 @@ describe("dPID", { timeout: 10_000 }, function () {
 
         it("should handle a versioned dpid", async () => {
             await request(app)
-                .get(BASE + "/46/v1")
+                .get("/46/v1")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
@@ -48,7 +45,7 @@ describe("dPID", { timeout: 10_000 }, function () {
 
         it("should handle a higher versioned dpid", async () => {
             await request(app)
-                .get(BASE + "/46/v4")
+                .get("/46/v4")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
@@ -60,7 +57,7 @@ describe("dPID", { timeout: 10_000 }, function () {
 
         it("should handle a 0-indexed versioned dpid", async () => {
             await request(app)
-                .get(BASE + "/46/0")
+                .get("/46/0")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
@@ -72,7 +69,7 @@ describe("dPID", { timeout: 10_000 }, function () {
 
         it("should handle a higher 0-indexed versioned dpid", async () => {
             await request(app)
-                .get(BASE + "/46/2")
+                .get("/46/2")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
@@ -84,7 +81,7 @@ describe("dPID", { timeout: 10_000 }, function () {
 
         it("should handle a file path", async () => {
             await request(app)
-                .get(BASE + "/46/v4/root/exploring-lupus-report.pdf")
+                .get("/46/v4/root/exploring-lupus-report.pdf")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
@@ -96,7 +93,7 @@ describe("dPID", { timeout: 10_000 }, function () {
 
         it("should handle directory path", async () => {
             await request(app)
-                .get(BASE + "/46/v4/root/exploring-lupus")
+                .get("/46/v4/root/exploring-lupus")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
@@ -211,7 +208,7 @@ describe("dPID", { timeout: 10_000 }, function () {
         // skipping because dev has duplicates, solve by reindexing dev sepolia graph
         it("should handle a versioned raw dpid", async () => {
             await request(app)
-                .get(BASE + "/46/v1?raw")
+                .get("/46/v1?raw")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
@@ -224,7 +221,7 @@ describe("dPID", { timeout: 10_000 }, function () {
         // skipping due to bad migration on sepolia-dev
         it("should handle an unversioned raw dpid", async () => {
             await request(app)
-                .get(BASE + "/46?raw")
+                .get("/46?raw")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];
@@ -235,20 +232,16 @@ describe("dPID", { timeout: 10_000 }, function () {
         });
 
         it("should handle a dPID path", async () => {
-            await request(app)
-                .get(BASE + "/46/v1/root?raw")
-                .expect(200);
+            await request(app).get("/46/v1/root?raw").expect(200);
         });
 
         it("should handle a dPID path subfolder", async () => {
-            await request(app)
-                .get(BASE + "/46/v1/root/exploring-lupus?raw")
-                .expect(200);
+            await request(app).get("/46/v1/root/exploring-lupus?raw").expect(200);
         });
 
         it("should handle a dPID path to file", async () => {
             await request(app)
-                .get(BASE + "/46/v1/root/.nodeKeep?raw")
+                .get("/46/v1/root/.nodeKeep?raw")
                 .expect(302)
                 .then((res) => {
                     const value = res.header["location"];

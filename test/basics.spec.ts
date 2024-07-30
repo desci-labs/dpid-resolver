@@ -1,13 +1,22 @@
-import { describe, it } from "vitest";
+import { afterAll, beforeAll, describe, it, vi } from "vitest";
 import request from "supertest";
 import assert from "assert";
 import { app } from "../src/index.js";
-import { getNodesUrl } from "../src/util/config.js";
 
-const NODES_URL = getNodesUrl();
+// Legacy resolver defaults to "regular" nodes for the unmatched localhost
+const NODES_URL = "https://nodes.desci.com";
+const IPFS_URL = "https://ipfs.desci.com/ipfs";
 
-describe("dPID resolution", { timeout: 3_000 }, function () {
-    describe("web resolution (for humans)", () => {
+describe("dPID resolution", { timeout: 5_000 }, function () {
+    beforeAll(() => {
+        vi.stubEnv("FALLBACK_RESOLVER", "1");
+    });
+
+    afterAll(() => {
+        vi.unstubAllEnvs();
+    });
+
+    describe("web resolution (for humans)", async () => {
         it("should handle a plain dpid", async () => {
             await request(app)
                 .get("/46")
@@ -190,8 +199,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected =
-                        "https://ipfs.desci.com/ipfs/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u";
+                    const expected = `${IPFS_URL}/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -204,8 +212,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected =
-                        "https://ipfs.desci.com/ipfs/bafkreihge5qw7sc3mqc4wkf4cgpv6udtvrgipfxwyph7dhlyu6bkkt7tfq";
+                    const expected = `${IPFS_URL}/bafkreihge5qw7sc3mqc4wkf4cgpv6udtvrgipfxwyph7dhlyu6bkkt7tfq`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });
@@ -225,8 +232,7 @@ describe("dPID resolution", { timeout: 3_000 }, function () {
                 .then((res) => {
                     const value = res.header["location"];
 
-                    const expected =
-                        "https://ipfs.desci.com/ipfs/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep";
+                    const expected = `${IPFS_URL}/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep`;
                     assert.equal(value, expected, "incorrect resolution");
                 });
         });

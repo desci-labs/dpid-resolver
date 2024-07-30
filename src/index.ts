@@ -1,12 +1,15 @@
-import dotenv from "dotenv";
-dotenv.config({ path: "../" });
+import "dotenv/config";
 import express, { type Express, type Request, type Response } from "express";
 import { DpidReader, type DpidRequest } from "./dpid-reader/DpidReader.js";
 import api from "./api/index.js";
 import logger from "./logger.js";
 import { pinoHttp } from "pino-http";
 import analytics, { LogEventType } from "./analytics.js";
-import { resolveGenericHandler } from "./api/v2/resolvers/generic.js";
+import {
+    resolveGenericHandler,
+    type ResolveGenericParams,
+    type ResolveGenericQueryParams,
+} from "./api/v2/resolvers/generic.js";
 
 export const app: Express = express();
 const port = process.env.PORT || 5460;
@@ -98,13 +101,18 @@ const legacyResolve = async (req: Request, res: Response) => {
     }
 };
 
-if (process.env.FALLBACK_RESOLVER === "1") {
-    logger.warn({ FALLBACK_RESOLVER: process.env.FALLBACK_RESOLVER }, "Fallback configured, using legacy resolution");
-    app.get("/*", legacyResolve);
-} else {
-    app.get("/*", resolveGenericHandler);
-}
+app.get("/*", (req, res) => {
+    if (process.env.FALLBACK_RESOLVER === "1") {
+        return legacyResolve(req, res);
+    } else {
+        return resolveGenericHandler(
+            req as Request<ResolveGenericParams, unknown, undefined, ResolveGenericQueryParams>,
+            res,
+        );
+    }
+});
 
+// Should probably check connectivity with ceramic/blockchain RPC/IPFS node
 app.use("/healthz", async (_req, res) => res.send("OK"));
 
 app.listen(port, () => {
