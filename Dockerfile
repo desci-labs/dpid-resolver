@@ -1,4 +1,5 @@
-FROM node:20.13.1-alpine3.20 AS base
+ARG NODE_VERSION
+FROM node:${NODE_VERSION}-alpine3.20 AS base
 RUN apk update && apk add --no-cache bash dumb-init
 
 WORKDIR /usr/src/app
