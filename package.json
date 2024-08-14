@@ -2,7 +2,7 @@
     "type": "module",
     "scripts": {
         "build": "tsc",
-        "build:image": "docker build --build-arg NODE_VERSION=$(< .nvmrc)",
+        "docker:build": "docker build --build-arg NODE_VERSION=$(< .nvmrc) .",
         "watch": "tsc --watch",
         "start": "node dist/index.js",
         "test": "PINO_LOG_LEVEL=silent PORT=5600 vitest --config vitest.config.ts",
