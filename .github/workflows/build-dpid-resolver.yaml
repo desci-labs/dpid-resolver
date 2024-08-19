@@ -1,11 +1,8 @@
-# build.yml
 on:
     push:
         branches: # array of glob patterns matching against refs/heads. Optional; defaults to all
             - main # triggers on pushes that contain changes
             - develop
-
-name: Build dpid-resolver
 
 # https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html
 env:
@@ -24,22 +21,21 @@ jobs:
         timeout-minutes: 10
         steps:
             - name: Prepare testing env
-              uses: actions/checkout@v2
-            - uses: actions/setup-node@v2
+              uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
               with:
-                  node-version: "18"
-            - run: npm ci && cp .env.example .env
-            - name: Run tests
-              run: npm run test
+                  node-version-file: ".nvmrc"
+                  check-latest: false
+                  cache: npm
+            - run: npm ci
+            - run: npm run test
     build-and-push:
         name: Build and deploy
         runs-on: ubuntu-latest
-        # needs: test
         timeout-minutes: 10
         steps:
             - uses: hashicorp/setup-terraform@v1
-            - name: Checkout
-              uses: actions/checkout@master
+            - uses: actions/checkout@v4
 
             # Add steps here like linting, testing, minification, etc.
             - id: install-aws-cli
@@ -70,6 +66,7 @@ jobs:
               run: |
                   # Build and tag the image
                   docker build \
+                    --build-arg NODE_VERSION=$(< .nvmrc) \
                     -t $CONTAINER_IMAGE-dev:latest \
                     -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$CONTAINER_IMAGE-dev \
                       .
@@ -79,6 +76,7 @@ jobs:
               run: |
                   # Build and tag the image
                   docker build \
+                    --build-arg NODE_VERSION=$(< .nvmrc) \
                     -t $CONTAINER_IMAGE:latest \
                     -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$CONTAINER_IMAGE \
                       .

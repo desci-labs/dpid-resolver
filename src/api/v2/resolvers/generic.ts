@@ -5,7 +5,8 @@ import type { ResearchObjectV1 } from "@desci-labs/desci-models";
 import parentLogger from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
 import { getIpfsGateway, getNodesUrl } from "../../../util/config.js";
-import { DpidResolverError, resolveDpid, type ResolveDpidResult } from "./dpid.js";
+import { DpidResolverError, resolveDpid } from "./dpid.js";
+import type { HistoryQueryResult } from "../queries/history.js";
 
 const MODULE_PATH = "/api/v2/resolvers/generic" as const;
 
@@ -68,8 +69,12 @@ export const resolveGenericHandler = async (
 
     const [dpid, ...rest] = path.split("/");
     if (!matchPlainDpid(dpid)) {
-        logger.error({ path }, "dpid not specified");
-        throw new Error("dpid not specified, pass dpid as route path");
+        logger.error({ path }, "invalid dpid");
+        return res.status(400).send({
+            error: "invalid dpid",
+            details: `expected valid dpid in path, got '${dpid}'`,
+            ...baseError,
+        });
     }
 
     const isRaw = query.raw !== undefined;
@@ -139,7 +144,7 @@ export const resolveGenericHandler = async (
 
     // If we didn't redirect to the Nodes app, we're either dealing with a raw
     // request or a file path, in either case we need to fetch the manifest
-    let resolveResult: ResolveDpidResult;
+    let resolveResult: HistoryQueryResult;
     try {
         resolveResult = await resolveDpid(parseInt(dpid), versionIx);
         logger.info({ dpid, path, query }, "resolved dpid manifest");

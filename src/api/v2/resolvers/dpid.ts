@@ -3,6 +3,8 @@ import parentLogger from "../../../logger.js";
 import { getDpidAliasRegistry } from "../../../util/config.js";
 import { resolveCodex } from "./codex.js";
 import { ResolverError } from "../../../errors.js";
+import type { HistoryQueryResult, HistoryVersion } from "../queries/history.js";
+import { BigNumber } from "ethers";
 
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
 const logger = parentLogger.child({
@@ -15,14 +17,7 @@ export type ResolveDpidRequest = {
     versionIx?: number;
 };
 
-export type ResolveDpidResponse = ResolveDpidResult | ResolveDpidError;
-
-export type ResolveDpidResult = {
-    /** The resolved stream, undefined if legacy entry without mapped stream */
-    streamId?: string;
-    /** manifest CID */
-    manifest: string;
-};
+export type ResolveDpidResponse = HistoryQueryResult | ResolveDpidError;
 
 export type ResolveDpidError = {
     error: string;
@@ -32,7 +27,8 @@ export type ResolveDpidError = {
 };
 
 /**
- * Find the manifest CID of a dPID
+ * Find the history of a dPID. Note that streamID and version ID will be empty
+ * strings in case a dPID is resolved through the legacy mapping.
  */
 export const resolveDpidHandler = async (
     req: Request<ResolveDpidRequest>,
@@ -49,7 +45,7 @@ export const resolveDpidHandler = async (
 
     const { dpid, versionIx } = req.params;
 
-    let result: ResolveDpidResult;
+    let result: HistoryQueryResult;
     try {
         result = await resolveDpid(dpid, versionIx);
     } catch (e) {
@@ -78,14 +74,24 @@ export const resolveDpidHandler = async (
     return res.status(200).send(result);
 };
 
+/** HistoryQueryResult possibly without stream ID and commit IDs, in case
+ * resolution was made though the legacy mapping
+ */
+export type DpidHistoryQueryResult = Omit<HistoryQueryResult, "id" | "versions"> & {
+    id?: string;
+    versions: (Omit<HistoryVersion, "version"> & { version?: string })[];
+};
+
 /**
- * Lookup the manifest of an optionally versioned dPID
- * @returns stream ID and manifest CID
+ * Lookup the history of a dPID
+ * @returns dPID history
  * @throws (@link DpidResolverError) on failure
  */
-export const resolveDpid = async (dpid: number, versionIx?: number): Promise<ResolveDpidResult> => {
+export const resolveDpid = async (dpid: number, versionIx?: number): Promise<HistoryQueryResult> => {
     const registry = getDpidAliasRegistry();
-    let streamId;
+
+    /** Empty string if dpid unmapped in registry */
+    let streamId: string;
     try {
         streamId = await registry.resolve(dpid);
     } catch (e) {
@@ -96,51 +102,47 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<Res
         });
     }
 
-    let manifestCid: string | undefined;
-
-    // Contract lookup returns zero value if key is not mapped
+    let result: HistoryQueryResult;
     if (streamId !== "") {
         try {
-            manifestCid = (await resolveCodex(streamId, versionIx)).manifest;
+            result = await resolveCodex(streamId, versionIx);
         } catch (e) {
             throw new DpidResolverError({
                 name: "CeramicContactFailed",
-                message: "Failed to resolve stream",
+                message: "Failed to resolve; does the dpid (or version) exist?",
                 cause: e,
             });
         }
-        logger.info({ dpid, manifestCid }, "successfully resolved dpid via stream");
-        return { streamId, manifest: manifestCid };
-    } else {
-        // dPID alias was unmapped, try resolve as legacy entry
-        logger.info({ dpid }, "alias not mapped, falling back to legacy lookup");
-        try {
-            const [owner, versions] = await registry.legacyLookup(dpid);
-            const lastVersion = versions[versionIx ?? versions.length - 1];
-
-            // Index 0 of the legacyEntry is the manifest CID
-            manifestCid = lastVersion[0];
-            logger.info(
-                { dpid, owner, versions: versions.map(([cid]) => cid) },
-                "manifest resolved via fallback to legacy entry",
-            );
-        } catch (e) {
-            throw new DpidResolverError({
-                name: "LegacyLookupError",
-                message: "failed to lookup legacy dpid",
-                cause: e,
-            });
-        }
-
-        if (!manifestCid) {
-            throw new DpidResolverError({
-                name: "DpidNotFound",
-                message: "dPID doesn't exist in registry",
-                cause: "fallback to legacy lookup failed",
-            });
-        }
+        logger.info(result, "manifest resolved via stream");
+        return result;
     }
-    return { manifest: manifestCid };
+
+    logger.info({ dpid }, "alias not mapped, falling back to legacy lookup");
+    try {
+        const [owner, versions] = await registry.legacyLookup(dpid);
+        const requestedVersion = versions[versionIx ?? versions.length - 1];
+
+        result = {
+            // No StreamID available
+            id: "",
+            owner,
+            manifest: requestedVersion[0],
+            versions: versions.map(([manifest, time]) => ({
+                // No CommitID available
+                version: "",
+                time: BigNumber.from(time).toNumber(),
+                manifest,
+            })),
+        };
+        logger.info(result, "manifest resolved via fallback to legacy entry");
+        return result;
+    } catch (e) {
+        throw new DpidResolverError({
+            name: "LegacyLookupError",
+            message: "failed to lookup legacy dpid",
+            cause: e,
+        });
+    }
 };
 
 type DpidErrorName = "RegistryContactFailed" | "CeramicContactFailed" | "LegacyLookupError" | "DpidNotFound";
