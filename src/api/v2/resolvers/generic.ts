@@ -7,6 +7,7 @@ import analytics, { LogEventType } from "../../../analytics.js";
 import { getIpfsGateway, getNodesUrl } from "../../../util/config.js";
 import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
+import { isDpid, isVersionString } from "../../../util/validation.js";
 
 const MODULE_PATH = "/api/v2/resolvers/generic" as const;
 
@@ -68,7 +69,7 @@ export const resolveGenericHandler = async (
     logger.info({ path, query }, `Resolving path: ${path}`);
 
     const [dpid, ...rest] = path.split("/");
-    if (!matchPlainDpid(dpid)) {
+    if (!isDpid(dpid)) {
         logger.error({ path }, "invalid dpid");
         return res.status(400).send({
             error: "invalid dpid",
@@ -95,7 +96,7 @@ export const resolveGenericHandler = async (
     let suffix = "";
     if (rest.length > 0) {
         const maybeVersionString = rest[0];
-        if (matchVersion(maybeVersionString)) {
+        if (isVersionString(maybeVersionString)) {
             versionIx = getVersionIndex(maybeVersionString);
             suffix = rest.slice(1).join("/");
             logger.info({ dpid, path, versionIx, suffix }, "extracted version from path");
@@ -234,10 +235,6 @@ export const resolveGenericHandler = async (
         return res.status(400).send(errPayload);
     }
 };
-
-const matchPlainDpid = (path: string) => /\d+/.test(path);
-
-const matchVersion = (path: string) => /v?\d+/.test(path);
 
 const getVersionIndex = (versionString: string): number => {
     let index;

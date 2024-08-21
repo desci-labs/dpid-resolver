@@ -3,6 +3,7 @@ import { getCeramicClient } from "../../../util/config.js";
 import { resolveHistory, type CeramicClient } from "@desci-labs/desci-codex-lib";
 import parentLogger from "../../../logger.js";
 import { resolveDpid } from "../resolvers/dpid.js";
+import { isDpid } from "../../../util/validation.js";
 
 const logger = parentLogger.child({
     module: "api/v2/queries/history",
@@ -94,9 +95,6 @@ export const getVersions = async (ceramic: CeramicClient, streamId: string) => {
         manifest: states[l.commit.toString()].content.manifest as string,
     }));
 };
-
-/** Consider ID a dPID if it looks like a number */
-const isDpid = (id: string) => /^[0-9]+$/.test(id);
 
 const getCodexHistories = async (streamIds: string[]) => {
     if (streamIds.length === 0) return [];
