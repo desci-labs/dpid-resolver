@@ -34,6 +34,11 @@ spec:
                     export OPTIMISM_RPC_URL={{ .Data.OPTIMISM_RPC_URL }}
                     export CERAMIC_URL={{ .Data.CERAMIC_URL }}
                     export FALLBACK_RESOLVER={{ .Data.FALLBACK_RESOLVER }}
+
+                    export REDIS_HOST={{ .Data.REDIS_HOST }}
+                    export REDIS_PORT={{ .Data.REDIS_PORT }}
+                    export CACHE_TTL_ANCHORED={{ .Data.CACHE_TTL_ANCHORED }}
+                    export CACHE_TTL_PENDING={{ .Data.CACHE_TTL_PENDING }}
                     echo "loaded"
                     {{- end -}}
             labels:

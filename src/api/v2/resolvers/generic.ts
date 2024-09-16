@@ -4,7 +4,7 @@ import type { ResearchObjectV1 } from "@desci-labs/desci-models";
 
 import parentLogger from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
-import { getIpfsGateway, getNodesUrl } from "../../../util/config.js";
+import { IPFS_GATEWAY, getNodesUrl } from "../../../util/config.js";
 import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
 import { isDpid, isVersionString } from "../../../util/validation.js";
@@ -15,8 +15,7 @@ const logger = parentLogger.child({
     module: MODULE_PATH,
 });
 
-const IPFS_GATEWAY_URL = getIpfsGateway();
-const IPFS_API_URL = IPFS_GATEWAY_URL.replace(/\/ipfs\/?$/, "/api/v0");
+const IPFS_API_URL = IPFS_GATEWAY.replace(/\/ipfs\/?$/, "/api/v0");
 const NODES_URL = getNodesUrl();
 
 export type ResolveGenericParams = {
@@ -172,7 +171,7 @@ export const resolveGenericHandler = async (
 
     /** dPID path doesn't refer to a file in the data tree */
     const noDagPath = suffix.length === 0;
-    const manifestUrl = `${IPFS_GATEWAY_URL}/${resolveResult.manifest}`;
+    const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
 
     if (noDagPath) {
         // Return manifest url as is
@@ -211,7 +210,7 @@ export const resolveGenericHandler = async (
             } else {
                 // It's a file or some random shit, redirect to resolver to
                 // dodge relaying a large transfer
-                return res.redirect(`${IPFS_GATEWAY_URL}/${dagPath}`);
+                return res.redirect(`${IPFS_GATEWAY}/${dagPath}`);
             }
         } catch (e) {
             // Doesn't seem it was a validDagUrl

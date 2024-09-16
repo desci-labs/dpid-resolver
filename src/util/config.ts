@@ -2,50 +2,32 @@ import { newCeramicClient, newComposeClient } from "@desci-labs/desci-codex-lib"
 import { contracts, typechain as tc } from "@desci-labs/desci-contracts";
 import { providers } from "ethers";
 
-const OPTIMISM_RPC_URL = process.env.OPTIMISM_RPC_URL;
-const CERAMIC_URL = process.env.CERAMIC_URL;
-const DPID_ENV = process.env.DPID_ENV;
-const IPFS_GATEWAY = process.env.IPFS_GATEWAY;
-
-const getOptimismProvider = () => {
-    if (!OPTIMISM_RPC_URL) {
-        throw new Error("OPTIMISM_RPC_URL not set");
+const getFromEnvOrThrow = (envvar: string) => {
+    const val = process.env[envvar];
+    if (!val) {
+        throw new Error(`${envvar} required but not set`);
     }
-    return new providers.JsonRpcProvider(OPTIMISM_RPC_URL);
+    return val;
 };
 
-export const getCeramicClient = () => {
-    if (!CERAMIC_URL) {
-        throw new Error("CERAMIC_URL not set");
-    }
-    return newCeramicClient(CERAMIC_URL);
-};
-
-export const getComposeClient = () => {
-    if (!CERAMIC_URL) {
-        throw new Error("CERAMIC_URL not set");
-    }
-
-    return newComposeClient({ ceramic: CERAMIC_URL });
-};
+export const OPTIMISM_RPC_URL = getFromEnvOrThrow("OPTIMISM_RPC_URL");
+export const IPFS_GATEWAY = getFromEnvOrThrow("IPFS_GATEWAY");
+export const CERAMIC_URL = getFromEnvOrThrow("CERAMIC_URL");
+export const DPID_ENV = getFromEnvOrThrow("DPID_ENV");
 
 const VALID_ENVS = ["local", "dev", "staging", "production"];
+if (!VALID_ENVS.includes(DPID_ENV)) {
+    throw new Error(`Unsupported DPID_ENV: ${DPID_ENV}`);
+}
 
-const getDpidEnv = () => {
-    if (!DPID_ENV) {
-        throw new Error("DPID_ENV not set");
-    }
+const getOptimismProvider = () => new providers.JsonRpcProvider(OPTIMISM_RPC_URL);
 
-    if (!VALID_ENVS.includes(DPID_ENV)) {
-        throw new Error(`Unsupported DPID_ENV: ${DPID_ENV}`);
-    }
+export const getCeramicClient = () => newCeramicClient(CERAMIC_URL);
 
-    return DPID_ENV;
-};
+export const getComposeClient = () => newComposeClient({ ceramic: CERAMIC_URL });
 
 const getAliasRegistryAddress = (): string => {
-    const env = getDpidEnv();
-    switch (env) {
+    switch (DPID_ENV) {
         case "local":
             return contracts.localDpidAliasInfo.proxies[0].address;
         case "dev":
@@ -55,7 +37,7 @@ const getAliasRegistryAddress = (): string => {
         case "production":
             return contracts.prodDpidAliasInfo.proxies[0].address;
         default:
-            throw new Error(`No dPID alias registry for DPID_ENV ${env}`);
+            throw new Error(`No dPID alias registry for DPID_ENV ${DPID_ENV}`);
     }
 };
 
@@ -63,8 +45,7 @@ export const getDpidAliasRegistry = () =>
     tc.DpidAliasRegistry__factory.connect(getAliasRegistryAddress(), getOptimismProvider());
 
 export const getNodesUrl = () => {
-    const env = getDpidEnv();
-    switch (env) {
+    switch (DPID_ENV) {
         case "local":
             return "http://localhost:3000";
         case "dev":
@@ -74,13 +55,15 @@ export const getNodesUrl = () => {
         case "production":
             return "https://nodes.desci.com";
         default:
-            throw new Error(`No nodes URL available for DPID_ENV ${env}`);
+            throw new Error(`No nodes URL available for DPID_ENV ${DPID_ENV}`);
     }
 };
 
-export const getIpfsGateway = () => {
-    if (!IPFS_GATEWAY) {
-        throw new Error("IPFS_GATEWAY not set");
-    }
-    return IPFS_GATEWAY;
-};
+const ONE_WEEK = 60 * 60 * 24 * 7;
+const TEN_MINUTES = 60 * 10;
+
+/** Cache TTL for commits that have been anchored / finalized */
+export const CACHE_TTL_ANCHORED = process.env.CACHE_TTL_ANCHORED ? parseInt(process.env.CACHE_TTL_ANCHORED) : ONE_WEEK;
+
+/** Cache TTL for commits pending anchoring, i.e. hasn't got a timestamp */
+export const CACHE_TTL_PENDING = process.env.CACHE_TTL_PENDING ? parseInt(process.env.CACHE_TTL_PENDING) : TEN_MINUTES;

@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import parentLogger from "../../../logger.js";
-import { newCeramicClient, pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
-import { getVersions, type HistoryQueryResult } from "../queries/history.js";
+import { pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
+import { getCodexHistory, type HistoryQueryResult } from "../queries/history.js";
 
 const CERAMIC_URL = process.env.CERAMIC_URL;
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
@@ -10,11 +10,6 @@ const logger = parentLogger.child({
     module: MODULE_PATH,
     ceramicApi: CERAMIC_URL,
 });
-
-const getCeramicClient = () => {
-    if (!CERAMIC_URL) throw new Error("CERAMIC_URL not set");
-    return newCeramicClient(CERAMIC_URL);
-};
 
 export type ResolveCodexParams = {
     streamOrCommitId: string;
@@ -102,18 +97,16 @@ export const resolveCodexHandler = async (
 
 /** Resolve full stream history */
 export const resolveCodex = async (streamId: string, versionIx?: number): Promise<HistoryQueryResult> => {
-    const client = getCeramicClient();
-    const stream = await client.loadStream(streamId);
+    const history = await getCodexHistory(streamId);
 
-    const versions = await getVersions(client, streamId);
-    if (versionIx && versionIx > versions.length) {
+    if (versionIx !== undefined && versionIx > history.versions.length) {
         throw new Error("versionIx out of bounds");
     }
 
-    return {
-        id: streamId,
-        owner: stream.state.metadata.controllers[0].replace(/did:pkh:eip155:[0-9]+:/, ""),
-        manifest: versionIx ? versions[versionIx].manifest : (stream.content.manifest as string),
-        versions,
-    };
+    if (versionIx !== undefined) {
+        // overwrite the top-level manifest with the specified version
+        history.manifest = history.versions[versionIx].manifest;
+    }
+
+    return history;
 };
