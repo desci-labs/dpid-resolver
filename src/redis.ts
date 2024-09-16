@@ -40,7 +40,7 @@ redisClient.on("error", (err) => {
 });
 
 export async function getFromCache<T>(key: string): Promise<T | null> {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
         logger.error({ fn: "getFromCache", key, op: "get" }, "client not connected");
         return null;
     }
@@ -56,7 +56,7 @@ export async function getFromCache<T>(key: string): Promise<T | null> {
 }
 
 export async function setToCache<T>(key: string, value: T, ttl: number): Promise<void> {
-    if (!redisClient.isOpen) {
+    if (!redisClient.isReady) {
         logger.error({ fn: "setToCache", key, op: "set" }, "client not connected");
         return;
     }
