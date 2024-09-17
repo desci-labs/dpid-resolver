@@ -5,7 +5,7 @@ import parentLogger from "../../../logger.js";
 import { resolveDpid } from "../resolvers/dpid.js";
 import { isDpid } from "../../../util/validation.js";
 import { CommitID, StreamID } from "@desci-labs/desci-codex-lib/dist/streams.js";
-import { getFromCache, setToCache } from "../../../redis.js";
+import { getFromCache, keyBump, setToCache } from "../../../redis.js";
 import { cleanupEip155Address } from "../../../util/conversions.js";
 
 const logger = parentLogger.child({
@@ -119,11 +119,13 @@ export const getCodexHistory = async (streamId: string) => {
         const key = getKeyForCommit(commit);
         const cached = await getFromCache<HistoryVersion>(key);
         if (cached !== null) {
+            // Only refresh TTL if entry is anchored, otherwise we'll postpone refreshes
+            if (cached.time) keyBump(key, CACHE_TTL_ANCHORED);
             return cached;
         }
         const fresh = await getFreshVersionInfo(ceramic, commit);
         const cacheTtl = fresh.time ? CACHE_TTL_ANCHORED : CACHE_TTL_PENDING;
-        await setToCache(key, fresh, cacheTtl);
+        setToCache(key, fresh, cacheTtl);
         return fresh;
     });
 

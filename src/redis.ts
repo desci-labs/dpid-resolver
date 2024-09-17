@@ -39,6 +39,15 @@ redisClient.on("error", (err) => {
     logger.error({ err }, "Client error");
 });
 
+export async function keyBump(key: string, ttl: number): Promise<void> {
+    if (!redisClient.isReady) {
+        logger.error({ fn: "keyBump", key, op: "bump" }, "client not connected");
+        return;
+    }
+    logger.info({ fn: "keyBump", key, op: "bump" }, "refreshing cache ttl");
+    await redisClient.expire(key, ttl);
+}
+
 export async function getFromCache<T>(key: string): Promise<T | null> {
     if (!redisClient.isReady) {
         logger.error({ fn: "getFromCache", key, op: "get" }, "client not connected");
