@@ -1,10 +1,11 @@
 import type { Request, Response } from "express";
 import parentLogger from "../../../logger.js";
-import { getDpidAliasRegistry } from "../../../util/config.js";
-import { resolveCodex } from "./codex.js";
+import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, getDpidAliasRegistry } from "../../../util/config.js";
 import { ResolverError } from "../../../errors.js";
-import type { HistoryQueryResult, HistoryVersion } from "../queries/history.js";
+import { getCodexHistory, type HistoryQueryResult, type HistoryVersion } from "../queries/history.js";
 import { BigNumber } from "ethers";
+import { getFromCache, setToCache } from "../../../redis.js";
+import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
 
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
 const logger = parentLogger.child({
@@ -82,6 +83,10 @@ export type DpidHistoryQueryResult = Omit<HistoryQueryResult, "id" | "versions">
     versions: (Omit<HistoryVersion, "version"> & { version?: string })[];
 };
 
+// These key formats are reused for invalidation in the publish controller
+const getKeyForDpid = (dpid: number) => `resolver-${DPID_ENV}-dpid-${dpid}`;
+const getKeyForLegacyEntry = (dpid: number) => `resolver-${DPID_ENV}-legacy-${dpid}`;
+
 /**
  * Lookup the history of a dPID
  * @returns dPID history
@@ -89,11 +94,21 @@ export type DpidHistoryQueryResult = Omit<HistoryQueryResult, "id" | "versions">
  */
 export const resolveDpid = async (dpid: number, versionIx?: number): Promise<HistoryQueryResult> => {
     const registry = getDpidAliasRegistry();
+    const streamCacheKey = getKeyForDpid(dpid);
 
     /** Empty string if dpid unmapped in registry */
     let streamId: string;
     try {
-        streamId = await registry.resolve(dpid);
+        let resolvedStream = await getFromCache<string>(streamCacheKey);
+        if (resolvedStream === null) {
+            resolvedStream = await registry.resolve(dpid);
+
+            // Skip caching if dpid is unset to avoid resolution delay after publish
+            if (resolvedStream.length) {
+                setToCache(streamCacheKey, resolvedStream, CACHE_TTL_ANCHORED);
+            }
+        }
+        streamId = resolvedStream;
     } catch (e) {
         throw new DpidResolverError({
             name: "RegistryContactFailed",
@@ -105,7 +120,7 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
     let result: HistoryQueryResult;
     if (streamId !== "") {
         try {
-            result = await resolveCodex(streamId, versionIx);
+            result = await getCodexHistory(streamId);
         } catch (e) {
             throw new DpidResolverError({
                 name: "CeramicContactFailed",
@@ -113,13 +128,31 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
                 cause: e,
             });
         }
-        logger.info(result, "manifest resolved via stream");
+        logger.info({ dpid, streamId, manifest: result.manifest }, "manifest resolved via stream");
         return result;
     }
 
     logger.info({ dpid }, "alias not mapped, falling back to legacy lookup");
     try {
-        const [owner, versions] = await registry.legacyLookup(dpid);
+        const legacyHistoryCacheKey = getKeyForLegacyEntry(dpid);
+        const fromCache = await getFromCache<string>(legacyHistoryCacheKey);
+
+        let resolvedEntry: DpidAliasRegistry.LegacyDpidEntryStructOutput;
+        if (fromCache === null) {
+            resolvedEntry = await registry.legacyLookup(dpid);
+            if (resolvedEntry.owner.length) {
+                const asString = JSON.stringify(resolvedEntry);
+                // We know this leads to a legacy entry, could probably cache it for longer.
+                // It'll go stale if the dpid is upgraded, or the contracts are re-syced
+                setToCache(legacyHistoryCacheKey, asString, CACHE_TTL_PENDING);
+                setToCache(streamCacheKey, "", CACHE_TTL_PENDING);
+            }
+        } else {
+            // The BigNumbers are parsed into objects, which ethers.BigNumber in fine with
+            resolvedEntry = JSON.parse(fromCache);
+        }
+
+        const [owner, versions] = resolvedEntry;
         const requestedVersion = versions[versionIx ?? versions.length - 1];
 
         result = {
