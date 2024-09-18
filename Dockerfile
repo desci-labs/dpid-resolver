@@ -1,10 +1,25 @@
-FROM node:16.17.0
+ARG NODE_VERSION
+FROM node:${NODE_VERSION}-alpine3.20 AS base
+RUN apk update && apk add --no-cache bash dumb-init
+
 WORKDIR /usr/src/app
-COPY . ./
-RUN npm install -g npm@9.5.1
-RUN npm ci --ignore-scripts
-EXPOSE 5460
-COPY .env.example .env
+COPY package*.json ./
+
+FROM base AS builder
+
+RUN --mount=type=cache,target=/usr/src/app/.npm \
+  npm set cache /usr/src/app/.npm && \
+  npm ci
+COPY . .
 RUN npm run build
-RUN apt-get install -y bash
-CMD [ "npm", "run", "start" ]
+
+FROM base AS prod
+
+COPY --chown=node:node --from=builder /usr/src/app/dist dist/
+COPY --chown=node:node --from=builder /usr/src/app/node_modules node_modules/
+COPY --chown=node:node --from=builder /usr/src/app/.env.example .env
+
+USER node
+EXPOSE 5460
+
+CMD [ "dumb-init", "node", "--no-warnings=ExperimentalWarning", "dist/index.js" ]

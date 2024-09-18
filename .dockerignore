@@ -1,3 +1,10 @@
+.git
+.gitignore
+.husky
 .env
+.github/
+.vscode/
 dist/
+test/
+kubernetes/
 node_modules/

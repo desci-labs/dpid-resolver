@@ -25,11 +25,20 @@ spec:
                 vault.hashicorp.com/agent-inject-template-config: |
                     {{- with secret "secrets/dpid-resolver/dev" -}}
                     echo "appstart"; 
-                    export NODE_ENV=production
-                    export ENV=dev
+                    export NODE_ENV={{ .Data.NODE_ENV }}
                     export SUPABASE_URL={{ .Data.SUPABASE_URL }}
                     export SUPABASE_KEY={{ .Data.SUPABASE_KEY }}
-                    export DEBUG_TEST=0;
+
+                    export DPID_ENV={{ .Data.DPID_ENV }}
+                    export IPFS_GATEWAY={{ .Data.IPFS_GATEWAY}}
+                    export OPTIMISM_RPC_URL={{ .Data.OPTIMISM_RPC_URL }}
+                    export CERAMIC_URL={{ .Data.CERAMIC_URL }}
+                    export FALLBACK_RESOLVER={{ .Data.FALLBACK_RESOLVER }}
+
+                    export REDIS_HOST={{ .Data.REDIS_HOST }}
+                    export REDIS_PORT={{ .Data.REDIS_PORT }}
+                    export CACHE_TTL_ANCHORED={{ .Data.CACHE_TTL_ANCHORED }}
+                    export CACHE_TTL_PENDING={{ .Data.CACHE_TTL_PENDING }}
                     echo "loaded"
                     {{- end -}}
             labels:
@@ -40,7 +49,7 @@ spec:
                   name: dpid-resolver-dev
                   command: ["/bin/bash", "-c"]
                   args:
-                      - echo "SOURCING ENV"; source /vault/secrets/config; NODE_PATH=./dist node ./dist/index.js;
+                      - echo "SOURCING ENV"; source /vault/secrets/config; dumb-init node ./dist/index.js;
                   ports:
                       - containerPort: 5460
                   resources:

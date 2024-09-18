@@ -1,20 +1,28 @@
-import dotenv from "dotenv";
-dotenv.config({ path: "../" });
-import express, { Express, Request, Response } from "express";
-import { DpidReader, DpidRequest } from "./dpid-reader/DpidReader";
-import api from "./api";
-import logger from "./logger";
-import pinoHttp from "pino-http";
-import analytics, { LogEventType } from "./analytics";
+import "dotenv/config";
+import express, { type Express, type Request, type Response } from "express";
+import { DpidReader, type DpidRequest } from "./dpid-reader/DpidReader.js";
+import api from "./api/index.js";
+import logger from "./logger.js";
+import { pinoHttp } from "pino-http";
+import analytics, { LogEventType } from "./analytics.js";
+import {
+    resolveGenericHandler,
+    type ResolveGenericParams,
+    type ResolveGenericQueryParams,
+} from "./api/v2/resolvers/generic.js";
 
 export const app: Express = express();
 const port = process.env.PORT || 5460;
 
 app.use(pinoHttp({ logger }));
+app.use(express.json());
 
 app.use("/api", api);
 
-app.get("/*", async (req: Request, res: Response) => {
+// Should probably check connectivity with ceramic/blockchain RPC/IPFS node
+app.use("/healthz", async (_req, res) => res.send("OK"));
+
+const legacyResolve = async (req: Request, res: Response) => {
     try {
         const path = req.params[0];
 
@@ -80,8 +88,8 @@ app.get("/*", async (req: Request, res: Response) => {
         res.redirect(
             (redir as string).replace(
                 "bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4/Data",
-                "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
-            )
+                "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq",
+            ),
         );
     } catch (err) {
         const error = err as Error;
@@ -93,6 +101,17 @@ app.get("/*", async (req: Request, res: Response) => {
             path: "/*",
         });
         logger.error({ err }, "GET /* wildcard-error");
+    }
+};
+
+app.get("/*", (req, res) => {
+    if (process.env.FALLBACK_RESOLVER === "1") {
+        return legacyResolve(req, res);
+    } else {
+        return resolveGenericHandler(
+            req as Request<ResolveGenericParams, unknown, undefined, ResolveGenericQueryParams>,
+            res,
+        );
     }
 });
 

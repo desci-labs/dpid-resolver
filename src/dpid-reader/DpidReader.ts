@@ -1,21 +1,23 @@
 /* eslint-disable no-console */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Dg4eT90opKOFZ7w-YCxVwX9O-sriKn0N";
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import { createAlchemyWeb3 } from "@alch/alchemy-web3";
-import sepoliaDevContract from "../deployments/sepoliaDev/config.json";
-import sepoliaProdContract from "../deployments/sepoliaProd/config.json";
+import sepoliaDevContract from "../deployments/sepoliaDev/config.json" assert { type: "json" };
+import sepoliaProdContract from "../deployments/sepoliaProd/config.json" assert { type: "json" };
 import { encode } from "url-safe-base64";
-import { getIndexedResearchObjects } from "./TheGraphResolver";
+import { getIndexedResearchObjects } from "./TheGraphResolver.js";
+// @ts-ignore
 import { base16 } from "multiformats/bases/base16";
+// @ts-ignore
 import { CID } from "multiformats/cid";
 import axios from "axios";
 import {
-    DataBucketComponent,
-    ResearchObjectV1,
-    ResearchObjectV1Component,
+    type DataBucketComponent,
+    type ResearchObjectV1,
+    type ResearchObjectV1Component,
     RoCrateTransformer,
 } from "@desci-labs/desci-models";
-import parentLogger from "../logger";
+import parentLogger from "../logger.js";
 
 const logger = parentLogger.child({ module: "DpidReader" });
 export interface DpidRequest {
@@ -28,21 +30,8 @@ export interface DpidRequest {
     domain?: string;
 }
 
-// export const encodeBase64UrlSafe = (bytes: Buffer) => {
-//     return encode(Buffer.from(bytes).toString('base64'));
-//   };
-// export const convertUUIDToHex = (uuid: string) => {
-//   const decoded = decode(uuid + ".");
-//   const buffer = Base64Binary.decodeArrayBuffer(decoded).slice(0, 32);
-//   let base64UuidToBase16 = Buffer.from(buffer).toString("hex");
-//   base64UuidToBase16 =
-//     "0x" +
-//     (base64UuidToBase16.length % 2 == 0
-//       ? base64UuidToBase16
-//       : "0" + base64UuidToBase16);
+const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Dg4eT90opKOFZ7w-YCxVwX9O-sriKn0N";
 
-//   return base64UuidToBase16;
-// };
 export const convertHexTo64PID = (hex: string, hexToBytes: any) => {
     const bytes: number[] = hexToBytes(hex);
 
@@ -63,14 +52,14 @@ export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } =
               __registry: "https://graph-sepolia-dev.desci.com/subgraphs/name/dpid-registry",
           }
         : process.env.DPID_ENV === "staging"
-        ? {
-              beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
-              __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
-          }
-        : {
-              beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
-              __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
-          };
+          ? {
+                beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+                __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
+            }
+          : {
+                beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+                __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
+            };
 
 logger.info({
     THE_GRAPH_RESOLVER_URL,
@@ -138,14 +127,24 @@ export class DpidReader {
     private static transformWeb = async (result: DpidResult, request: DpidRequest) => {
         const { prefix, suffix, version, domain } = request;
         const uuid = result.id64;
+        // debugger;
         const output = { msg: `beta.dpid.org resolver`, params: request, uuid };
 
         // TODO: support version=v1 syntax in Nodes and we can get rid of cleanVersion logic
-        const cleanVersion: string | undefined = !version
+        let cleanVersion: string | undefined = !version
             ? undefined
             : version?.substring(0, 1) == "v"
-            ? version
-            : `v${parseInt(version || "0") + 1}`;
+              ? version
+              : `v${parseInt(version || "0") + 1}`;
+
+        if (cleanVersion === "vNaN") {
+            /**
+             ** Not a valid version, so pass along the original string the user entered, it may route to other
+             ** codex entities or the DPID may be an alias to another external non research object entity.
+             */
+            cleanVersion = version;
+        }
+
         let environment = prefix === "beta-dev" || domain === "dev-beta.dpid.org" ? "-dev" : "";
         if (domain === "staging-beta.dpid.org") {
             environment = "-staging";
@@ -187,7 +186,7 @@ export class DpidReader {
 
         if (!targetVersion || !targetVersion.cid) {
             throw new Error(
-                "incorrect version, to get the first version use either 'v1' or '0', to get the second version use either 'v2' or '1', to get the latest, don't pass any suffix"
+                "incorrect version, to get the first version use either 'v1' or '0', to get the second version use either 'v2' or '1', to get the latest, don't pass any suffix",
             );
         }
 
@@ -222,12 +221,12 @@ export class DpidReader {
                     // temporary logic to reroute to a different IPFS gateway for certain datasets
                     .replace(
                         "bafybeiamtbqbtq6xq3qmj7sod6dygilxn2eztlgy3p7xctje6jjjbsdah4/Data",
-                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
+                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq",
                     )
                     // temporary logic to reroute to a different IPFS gateway for certain datasets
                     .replace(
                         "bafybeibi6wxfwa6mw5xlctezx2alaq4ookmld25pfqy3okbnfz4kkxtk4a/Data",
-                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq"
+                        "bafybeidmlofidcypbqcbjejpm6u472vbhwue2jebyrfnyymws644seyhdq",
                     );
                 logger.info({ arg, dataBucket }, "arg");
 
@@ -256,7 +255,7 @@ export class DpidReader {
                 }
             }
             throw new Error(
-                "data resolution fail: data folder not found in manifest. ensure data folder has been allocated."
+                "data resolution fail: data folder not found in manifest. ensure data folder has been allocated.",
             );
         }
         // const redir = `https://nodes.desci.com/${[uuid, cleanVersion, suffix].filter(Boolean).join('/')}`

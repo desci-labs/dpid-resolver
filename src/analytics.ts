@@ -1,7 +1,5 @@
-import dotenv from "dotenv";
-dotenv.config();
-import { SupabaseClient, createClient } from "@supabase/supabase-js";
-import parentLogger from "./logger";
+import { type SupabaseClient, createClient } from "@supabase/supabase-js";
+import parentLogger from "./logger.js";
 const logger = parentLogger.child({ module: "analytics" });
 
 export enum LogEventType {
@@ -22,7 +20,7 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
     supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
     logger.info("Created analytics client");
 } else {
-    logger.error(process.env, "Failed to create analytics client, env");
+    logger.error("Failed to create analytics client, check .env file");
 }
 
 export default {
