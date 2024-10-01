@@ -1,15 +1,16 @@
 import type { Request, Response } from "express";
 import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, getCeramicClient } from "../../../util/config.js";
 import { type CeramicClient } from "@desci-labs/desci-codex-lib";
-import parentLogger from "../../../logger.js";
-import { resolveDpid } from "../resolvers/dpid.js";
+import parentLogger, { serializeError } from "../../../logger.js";
+import { DpidResolverError, resolveDpid } from "../resolvers/dpid.js";
 import { isDpid } from "../../../util/validation.js";
 import { CommitID, StreamID } from "@desci-labs/desci-codex-lib/dist/streams.js";
 import { getFromCache, keyBump, setToCache } from "../../../redis.js";
 import { cleanupEip155Address } from "../../../util/conversions.js";
 
+const MODULE_PATH = "api/v2/queries/history" as const;
 const logger = parentLogger.child({
-    module: "api/v2/queries/history",
+    module: MODULE_PATH,
 });
 
 export type HistoryQueryRequest = {
@@ -22,7 +23,15 @@ export type HistoryQueryParams = {
     id?: string;
 };
 
-export type HistoryQueryResponse = HistoryQueryResult[] | HistoryQueryError;
+export type ErrorResponse = {
+    error: string;
+    details: unknown;
+    body: unknown;
+    params: unknown;
+    path: typeof MODULE_PATH;
+};
+
+export type HistoryQueryResponse = HistoryQueryResult[] | ErrorResponse;
 
 export type HistoryVersion = {
     /** Manifest CID at this version */
@@ -44,8 +53,6 @@ export type HistoryQueryResult = {
     versions: HistoryVersion[];
 };
 
-export type HistoryQueryError = string;
-
 /**
  * For one or more IDs, fetch metadata and version history.
  * An ID can be both a streamID and a dPID, but a dPID lookup is a bit slower.
@@ -57,10 +64,20 @@ export const historyQueryHandler = async (
     const { id } = req.params;
     const { ids = [] } = req.body;
 
+    const baseError = {
+        params: req.params,
+        body: req.body,
+        path: MODULE_PATH,
+    };
+
     if (!Array.isArray(ids)) {
         // Received ids in body, but not as array
-        logger.error({ body: req.body, params: req.params }, "received malformed IDs");
-        return res.status(400).send("body.ids expects string[]");
+        logger.error(baseError, "received malformed IDs");
+        return res.status(400).send({
+            error: "invalid request",
+            details: "body.ids expects string[]",
+            ...baseError,
+        });
     }
 
     if (id) {
@@ -70,8 +87,12 @@ export const historyQueryHandler = async (
 
     if (ids.length === 0) {
         // Neither ID format was supplied
-        logger.error({ body: req.body, params: req.params }, "request missing IDs");
-        return res.status(400).send("missing /:id or ids array in body");
+        logger.error(baseError, "request missing IDs");
+        return res.status(400).send({
+            error: "invalid request",
+            details: "missing /:id or ids array in body",
+            ...baseError,
+        });
     }
 
     logger.info({ ids }, "handling history query");
@@ -87,9 +108,23 @@ export const historyQueryHandler = async (
         ]);
         const result = [...codexHistories, ...dpidHistories];
         return res.send(result);
-    } catch (error) {
-        logger.error({ ids, error }, "failed to compile histories");
-        return res.status(500).send("failed to compile histories");
+    } catch (e) {
+        if (e instanceof DpidResolverError) {
+            const errPayload = {
+                error: "failed to resolve dpid",
+                details: serializeError(e),
+                ...baseError,
+            };
+            logger.error(errPayload, "failed to resolve dpid");
+            return res.status(500).send(errPayload);
+        }
+        const errPayload = {
+            error: "failed to compile histories",
+            details: serializeError(e as Error),
+            ...baseError,
+        };
+        logger.error(errPayload, "failed to compile histories");
+        return res.status(500).send(errPayload);
     }
 };
 

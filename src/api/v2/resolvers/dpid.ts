@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import parentLogger from "../../../logger.js";
+import parentLogger, { serializeError } from "../../../logger.js";
 import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, getDpidAliasRegistry } from "../../../util/config.js";
 import { ResolverError } from "../../../errors.js";
 import { getCodexHistory, type HistoryQueryResult, type HistoryVersion } from "../queries/history.js";
@@ -7,7 +7,7 @@ import { getFromCache, setToCache } from "../../../redis.js";
 import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
 import { BigNumber } from "ethers";
 
-const MODULE_PATH = "/api/v2/resolvers/codex" as const;
+const MODULE_PATH = "/api/v2/resolvers/dpid" as const;
 const logger = parentLogger.child({
     module: MODULE_PATH,
 });
@@ -53,7 +53,7 @@ export const resolveDpidHandler = async (
         if (e instanceof DpidResolverError) {
             const errPayload = {
                 error: e.message,
-                details: e.cause,
+                details: serializeError(e.cause),
                 params: req.params,
                 path: MODULE_PATH,
             };
@@ -63,7 +63,7 @@ export const resolveDpidHandler = async (
             const err = e as Error;
             const errPayload = {
                 error: err.message,
-                details: err,
+                details: serializeError(err),
                 params: req.params,
                 path: MODULE_PATH,
             };
@@ -148,8 +148,11 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
                 setToCache(streamCacheKey, "", CACHE_TTL_PENDING);
             }
         } else {
-            // The BigNumbers are parsed into objects, which ethers.BigNumber in fine with
             resolvedEntry = JSON.parse(fromCache);
+            // The BigNumbers are deserialized into objects, which ethers.BigNumber can instantiate from
+            resolvedEntry[1].forEach((v) => {
+                v[1] = BigNumber.from(v[1]);
+            });
         }
 
         const owner = resolvedEntry[0];
@@ -166,11 +169,11 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
                 version: "",
                 // When restored from redis, the BigNumber is deserialised as a regular object
                 // Ethers can instantiate the class from that format
-                time: BigNumber.from(time).toNumber(),
+                time: time.toNumber(),
                 manifest,
             })),
         };
-        logger.info(result, "manifest resolved via fallback to legacy entry");
+        logger.info({ dpid, owner, manifest: result.manifest }, "manifest resolved via fallback to legacy entry");
         return result;
     } catch (e) {
         throw new DpidResolverError({
@@ -199,10 +202,7 @@ const undupeIfLegacyDevHistory = (versions: LegacyVersion[]) => {
     }, [] as LegacyVersion[]);
 };
 
-const isLegacyDupe = (
-    [aCid, aTimeBn]: LegacyVersion, 
-    [bCid, bTimeBn]: LegacyVersion
-): Boolean => {
+const isLegacyDupe = ([aCid, aTimeBn]: LegacyVersion, [bCid, bTimeBn]: LegacyVersion): boolean => {
     const cidIsEqual = aCid === bCid;
     const timeIsEqual = aTimeBn.toNumber() === bTimeBn.toNumber();
     return cidIsEqual && timeIsEqual;

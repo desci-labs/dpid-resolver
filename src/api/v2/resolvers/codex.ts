@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import parentLogger from "../../../logger.js";
+import parentLogger, { serializeError } from "../../../logger.js";
 import { pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
 import { getCodexHistory, type HistoryQueryResult } from "../queries/history.js";
 
@@ -46,7 +46,7 @@ export const resolveCodexHandler = async (
     } catch (e) {
         const errPayload = {
             error: "Invalid stream or commit ID",
-            details: "Could not coerce ID into neither stream nor commitID",
+            details: serializeError(e as Error),
             params: req.params,
             path: MODULE_PATH,
         };
@@ -67,7 +67,7 @@ export const resolveCodexHandler = async (
         logger.error({ streamId, versionIx, err }, "failed to resolve stream");
         return res.status(404).send({
             error: "Could not resolve; does stream/version exist?",
-            details: err,
+            details: serializeError(err),
             params: req.params,
             path: MODULE_PATH,
         });

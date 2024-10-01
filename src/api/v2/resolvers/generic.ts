@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import axios from "axios";
 import type { ResearchObjectV1 } from "@desci-labs/desci-models";
 
-import parentLogger from "../../../logger.js";
+import parentLogger, { serializeError } from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
 import { IPFS_GATEWAY, getNodesUrl } from "../../../util/config.js";
 import { DpidResolverError, resolveDpid } from "./dpid.js";
@@ -152,7 +152,7 @@ export const resolveGenericHandler = async (
         if (e instanceof DpidResolverError) {
             const errPayload = {
                 error: e.message,
-                details: e.cause,
+                details: serializeError(e.cause),
                 ...baseError,
             };
             logger.error(errPayload, "failed to resolve dpid");
@@ -161,7 +161,7 @@ export const resolveGenericHandler = async (
             const err = e as Error;
             const errPayload = {
                 error: err.message,
-                details: err,
+                details: serializeError(err),
                 ...baseError,
             };
             logger.error(errPayload, "unexpected error occurred");
@@ -216,7 +216,7 @@ export const resolveGenericHandler = async (
             // Doesn't seem it was a validDagUrl
             const errPayload = {
                 error: "Failed to resolve DAG URL; check path and versioning",
-                details: e,
+                details: serializeError(e as Error),
                 ...baseError,
             };
             logger.error(errPayload, "got invalid DAG URL");
