@@ -3,9 +3,9 @@ import parentLogger from "../../../logger.js";
 import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, getDpidAliasRegistry } from "../../../util/config.js";
 import { ResolverError } from "../../../errors.js";
 import { getCodexHistory, type HistoryQueryResult, type HistoryVersion } from "../queries/history.js";
-import { BigNumber } from "ethers";
 import { getFromCache, setToCache } from "../../../redis.js";
 import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
+import { BigNumber } from "ethers";
 
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
 const logger = parentLogger.child({
@@ -152,7 +152,8 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
             resolvedEntry = JSON.parse(fromCache);
         }
 
-        const [owner, versions] = resolvedEntry;
+        const owner = resolvedEntry[0];
+        const versions = undupeIfLegacyDevHistory(resolvedEntry[1]);
         const requestedVersion = versions[versionIx ?? versions.length - 1];
 
         result = {
@@ -163,6 +164,8 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
             versions: versions.map(([manifest, time]) => ({
                 // No CommitID available
                 version: "",
+                // When restored from redis, the BigNumber is deserialised as a regular object
+                // Ethers can instantiate the class from that format
                 time: BigNumber.from(time).toNumber(),
                 manifest,
             })),
@@ -179,5 +182,28 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
 };
 
 type DpidErrorName = "RegistryContactFailed" | "CeramicContactFailed" | "LegacyLookupError" | "DpidNotFound";
-
 export class DpidResolverError extends ResolverError<DpidErrorName> {}
+
+type LegacyVersion = DpidAliasRegistry.LegacyVersionStructOutput;
+
+const undupeIfLegacyDevHistory = (versions: LegacyVersion[]) => {
+    if (DPID_ENV !== "dev") {
+        return versions;
+    }
+
+    return versions.reduce((unduped, current) => {
+        if (unduped.length === 0 || !isLegacyDupe(current, unduped[unduped.length - 1])) {
+            unduped.push(current);
+        }
+        return unduped;
+    }, [] as LegacyVersion[]);
+};
+
+const isLegacyDupe = (
+    [aCid, aTimeBn]: LegacyVersion, 
+    [bCid, bTimeBn]: LegacyVersion
+): Boolean => {
+    const cidIsEqual = aCid === bCid;
+    const timeIsEqual = aTimeBn.toNumber() === bTimeBn.toNumber();
+    return cidIsEqual && timeIsEqual;
+};

@@ -279,7 +279,8 @@ describe("dPID", { timeout: 10_000 }, function () {
                     .expect(200)
                     .expect((res) =>
                         expect(res.body.manifest).toEqual(
-                            "bafkreih5koqw5nvxucidlihwfslknj674oeuroclit74rkaqpe4mq6xuka",
+                            // fourth published CID
+                            "bafkreibn3jhdlsdsonv25t7i2bwtrbkl3jzwjbnnwylpeih3jmmzdhsfmi",
                         ),
                     );
             });
