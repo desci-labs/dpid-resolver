@@ -199,6 +199,11 @@ const undupeIfLegacyDevHistory = (versions: LegacyVersion[]) => {
     }, [] as LegacyVersion[]);
 };
 
-const isLegacyDupe = (a: LegacyVersion, b: LegacyVersion) => {
-    return a[0] === b[0] && a[1].toNumber() === b[1].toNumber();
+const isLegacyDupe = (
+    [aCid, aTimeBn]: LegacyVersion, 
+    [bCid, bTimeBn]: LegacyVersion
+): Boolean => {
+    const cidIsEqual = aCid === bCid;
+    const timeIsEqual = aTimeBn.toNumber() === bTimeBn.toNumber();
+    return cidIsEqual && timeIsEqual;
 };
