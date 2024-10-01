@@ -39,6 +39,8 @@ function omitBuffer(array: any) {
     });
 }
 
+export const serializeError = (e: Error) => pino.stdSerializers.err(e);
+
 process.on("uncaughtException", (err) => {
     logger.fatal(err, "uncaught exception");
 });
