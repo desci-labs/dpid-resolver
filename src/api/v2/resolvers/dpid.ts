@@ -5,6 +5,7 @@ import { ResolverError } from "../../../errors.js";
 import { getCodexHistory, type HistoryQueryResult, type HistoryVersion } from "../queries/history.js";
 import { getFromCache, setToCache } from "../../../redis.js";
 import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
+import { BigNumber } from "ethers";
 
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
 const logger = parentLogger.child({
@@ -163,7 +164,9 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
             versions: versions.map(([manifest, time]) => ({
                 // No CommitID available
                 version: "",
-                time: time.toNumber(),
+                // When restored from redis, the BigNumber is deserialised as a regular object
+                // Ethers can instantiate the class from that format
+                time: BigNumber.from(time).toNumber(),
                 manifest,
             })),
         };
