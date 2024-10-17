@@ -11,11 +11,48 @@ import {
     type ResolveGenericQueryParams,
 } from "./api/v2/resolvers/generic.js";
 
+const allowlist = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:61440",
+    "http://localhost:3002",
+    "http://host.docker.internal:3000",
+    "http://host.docker.internal:3002",
+    "http://127.0.0.1:3000",
+    "https://nodes.desci.com",
+    "https://nodes-dev.desci.com",
+    "https://nodes-demo.desci.com",
+    "d2195goqok3wlx.amplifyapp.com",
+    "d3ge8gcb3rt5iw.amplifyapp.com",
+    "desci.com",
+    "gitpod.io",
+    "loca.lt" /** NOT SECURE */,
+    "vercel.app" /** NOT SECURE */,
+];
+
 export const app: Express = express();
 const port = process.env.PORT || 5460;
 
 app.use(pinoHttp({ logger }));
 app.use(express.json());
+
+app.use(function (req, res, next) {
+    // Handle CORS
+    const origin = req.headers.origin;
+    if (
+        (origin && allowlist.indexOf(origin) !== -1) ||
+        (origin && allowlist.filter((a) => a.indexOf("http") != 0 && origin && origin.endsWith(a)).length)
+    ) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader(
+            "Access-Control-Allow-Headers",
+            "X-Requested-With,Content-Type,Authorization,sentry-trace,baggage",
+        );
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS, PUT, DELETE");
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+    next();
+});
 
 app.use("/api", api);
 
