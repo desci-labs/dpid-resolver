@@ -17,6 +17,18 @@ const port = process.env.PORT || 5460;
 app.use(pinoHttp({ logger }));
 app.use(express.json());
 
+/** Wide open, since it:
+ * - only resolves public information
+ * - doesn't implement any type of auth
+ * - should be generally available to the public
+ */
+app.use(function (_req, res, next) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    next();
+});
+
 app.use("/api", api);
 
 // Should probably check connectivity with ceramic/blockchain RPC/IPFS node
