@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import axios from "axios";
-import type { ResearchObjectV1 } from "@desci-labs/desci-models";
+import { RoCrateTransformer, type ResearchObjectV1 } from "@desci-labs/desci-models";
 
 import parentLogger, { serializeError } from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
@@ -80,15 +80,6 @@ export const resolveGenericHandler = async (
     const isRaw = query.raw !== undefined;
     const isJsonld = query.jsonld !== undefined;
 
-    if (isJsonld) {
-        logger.error({ path, query }, "got request for jsonld");
-        return res.status(501).send({
-            error: "jsonld format not supported",
-            details: "jsonld formatted requests are not supported by the resolver",
-            ...baseError,
-        });
-    }
-
     /** dPID version identifier, possibly adjusted to 0-based indexing */
     let versionIx: number | undefined;
     /** dPID path suffix, possibly empty */
@@ -107,6 +98,25 @@ export const resolveGenericHandler = async (
                 "couldn't extract version, considering first segment part of path suffix",
             );
         }
+    }
+
+    if (isJsonld) {
+        logger.warn({ path, query }, "got request for jsonld");
+        const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
+
+        // console.log({ resolveResult });
+
+        const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
+
+        const transformer = new RoCrateTransformer();
+
+        const response = await fetch(manifestUrl);
+
+        // console.log({ manifestUrl });
+
+        const roCrate = transformer.exportObject(await response.json());
+
+        return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
     }
 
     analytics.log({
