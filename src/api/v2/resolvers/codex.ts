@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 import parentLogger, { serializeError } from "../../../logger.js";
 import { pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
 import { getCodexHistory, type HistoryQueryResult } from "../queries/history.js";
+import { IPFS_GATEWAY } from "../../../util/config.js";
+import { RoCrateTransformer } from "@desci-labs/desci-models";
 
 const CERAMIC_URL = process.env.CERAMIC_URL;
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
@@ -16,8 +18,14 @@ export type ResolveCodexParams = {
     versionIx?: number;
 };
 
+export type ResolveCodexQueryParams = {
+    raw?: "";
+    jsonld?: "";
+};
+
 export type ResolveCodexResponse =
     | HistoryQueryResult
+    | string // RO-Crate if ?jsonLd query param is present
     | {
           error: string;
           details: unknown;
@@ -33,12 +41,14 @@ export type ResolveCodexResponse =
  * @throws if id is an invalid stream or commit ID
  */
 export const resolveCodexHandler = async (
-    req: Request<ResolveCodexParams>,
+    req: Request<ResolveCodexParams, unknown, undefined, ResolveCodexQueryParams>,
     res: Response<ResolveCodexResponse>,
-): Promise<typeof res> => {
+): Promise<typeof res | void> => {
     logger.info({ ...req.params }, `resolving codex entity with ${CERAMIC_URL}`);
 
     const { streamOrCommitId, versionIx } = req.params;
+    const wantRaw = req.query.raw !== undefined;
+    const wantJsonLd = req.query.jsonld !== undefined;
 
     let codexPid: PID;
     try {
@@ -92,7 +102,25 @@ export const resolveCodexHandler = async (
         result.manifest = commitVersion.manifest;
     }
 
-    return res.status(200).send(result);
+    const manifestUrl = `${IPFS_GATEWAY}/${result.manifest}`;
+    if (wantRaw) {
+        return res.redirect(manifestUrl);
+    } else if (wantJsonLd) {
+        const transformer = new RoCrateTransformer();
+        const response = await fetch(manifestUrl);
+        if (!response.ok) {
+            return res.status(500).send({
+                error: "Could not resolve manifest",
+                details: `Couldn't find manifest ${result.manifest} for RO-Crate transform`,
+                params: req.params,
+                path: MODULE_PATH,
+            });
+        }
+        const roCrate = transformer.exportObject(await response.json());
+        return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
+    } else {
+        return res.status(200).send(result);
+    }
 };
 
 /** Resolve full stream history */

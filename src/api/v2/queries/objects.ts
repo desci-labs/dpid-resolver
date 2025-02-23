@@ -52,6 +52,7 @@ export const objectQueryHandler = async (
 
     const objects: ResearchObjectQueryFmt[] = response.data.researchObjectIndex.edges
         .map((e) => e.node)
+        .filter((n) => n !== null) // filter out unresolvable dev nodes
         .map((n) => ({ ...n, owner: n.owner.id }));
 
     return res.send(objects);
