@@ -31,7 +31,7 @@ jobs:
             - run: npm run test
     build-and-push:
         name: Build and deploy
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-22.04
         timeout-minutes: 10
         steps:
             - uses: hashicorp/setup-terraform@v1
