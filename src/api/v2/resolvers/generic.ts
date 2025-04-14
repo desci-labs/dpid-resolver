@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import axios from "axios";
-import { RoCrateTransformer, type ResearchObjectV1 } from "@desci-labs/desci-models";
+import { RoCrateTransformer, type ResearchObjectV1, MystTransformer } from "@desci-labs/desci-models";
 
 import parentLogger, { serializeError } from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
@@ -24,8 +24,11 @@ export type ResolveGenericParams = {
 };
 
 export type ResolveGenericQueryParams = {
+    /** @deprecated use format instead */
     raw?: "";
+    /** @deprecated use format instead */
     jsonld?: "";
+    format?: "jsonld" | "json" | "raw" | "myst";
 };
 
 export type ErrorResponse = {
@@ -77,8 +80,9 @@ export const resolveGenericHandler = async (
         });
     }
 
-    const isRaw = query.raw !== undefined;
-    const isJsonld = query.jsonld !== undefined;
+    const isRaw = query.raw !== undefined || query.format === "raw";
+    const isJsonld = query.jsonld !== undefined || query.format === "jsonld";
+    const isMyst = query.format === "myst";
 
     /** dPID version identifier, possibly adjusted to 0-based indexing */
     let versionIx: number | undefined;
@@ -119,6 +123,21 @@ export const resolveGenericHandler = async (
         return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
     }
 
+    if (isMyst) {
+        logger.warn({ path, query }, "got request for myst");
+        const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
+
+        const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
+
+        const response = await fetch(manifestUrl);
+
+        const transformer = new MystTransformer();
+
+        const mystOutput = transformer.exportObject(JSON.parse(await response.text()));
+
+        return res.setHeader("Content-Type", "text/myst").send(mystOutput);
+    }
+
     analytics.log({
         dpid: parseInt(dpid),
         version: versionIx || -1,
@@ -127,6 +146,8 @@ export const resolveGenericHandler = async (
             dpid,
             version: versionIx,
             raw: isRaw,
+            jsonld: isJsonld,
+            myst: isMyst,
             domain: req.hostname,
             params: req.params,
             query: req.query,

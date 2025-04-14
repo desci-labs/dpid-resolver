@@ -31,7 +31,7 @@
         "@alch/alchemy-web3": "^1.4.7",
         "@desci-labs/desci-codex-lib": "^1.1.7",
         "@desci-labs/desci-contracts": "^0.2.7",
-        "@desci-labs/desci-models": "^0.2.23",
+        "@desci-labs/desci-models": "^0.2.25-rc1",
         "@supabase/supabase-js": "^2.43.5",
         "axios": "^1.7.2",
         "dotenv": "^16.4.5",
