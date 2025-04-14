@@ -3,7 +3,7 @@ import parentLogger, { serializeError } from "../../../logger.js";
 import { pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
 import { getCodexHistory, type HistoryQueryResult } from "../queries/history.js";
 import { IPFS_GATEWAY } from "../../../util/config.js";
-import { RoCrateTransformer } from "@desci-labs/desci-models";
+import { MystTransformer, RoCrateTransformer } from "@desci-labs/desci-models";
 
 const CERAMIC_URL = process.env.CERAMIC_URL;
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
@@ -19,8 +19,11 @@ export type ResolveCodexParams = {
 };
 
 export type ResolveCodexQueryParams = {
+    /** @deprecated use format instead */
     raw?: "";
+    /** @deprecated use format instead */
     jsonld?: "";
+    format?: "jsonld" | "json" | "raw" | "myst";
 };
 
 export type ResolveCodexResponse =
@@ -47,8 +50,9 @@ export const resolveCodexHandler = async (
     logger.info({ ...req.params }, `resolving codex entity with ${CERAMIC_URL}`);
 
     const { streamOrCommitId, versionIx } = req.params;
-    const wantRaw = req.query.raw !== undefined;
-    const wantJsonLd = req.query.jsonld !== undefined;
+    const wantRaw = req.query.raw !== undefined || req.query.format === "raw";
+    const wantJsonLd = req.query.jsonld !== undefined || req.query.format === "jsonld";
+    const wantMyst = req.query.format === "myst";
 
     let codexPid: PID;
     try {
@@ -118,6 +122,11 @@ export const resolveCodexHandler = async (
         }
         const roCrate = transformer.exportObject(await response.json());
         return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
+    } else if (wantMyst) {
+        const transformer = new MystTransformer();
+        const response = await fetch(manifestUrl);
+        const mystOutput = transformer.exportObject(await response.json());
+        return res.setHeader("Content-Type", "text/myst").send(mystOutput);
     } else {
         return res.status(200).send(result);
     }
