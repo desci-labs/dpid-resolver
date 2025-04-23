@@ -5,7 +5,7 @@ import parentLogger, { serializeError } from "../../../logger.js";
 import { DpidResolverError, resolveDpid } from "../resolvers/dpid.js";
 import { isDpid } from "../../../util/validation.js";
 import { CommitID, StreamID } from "@desci-labs/desci-codex-lib/dist/streams.js";
-import { getFromCache, keyBump, setToCache } from "../../../redis.js";
+import { redisService } from "../../../index.js";
 import { cleanupEip155Address } from "../../../util/conversions.js";
 
 const MODULE_PATH = "api/v2/queries/history" as const;
@@ -152,15 +152,19 @@ export const getCodexHistory = async (streamId: string) => {
 
     const versionPromises = commitIds.map(async (commit) => {
         const key = getKeyForCommit(commit);
-        const cached = await getFromCache<HistoryVersion>(key);
+        if (!redisService) {
+            return await getFreshVersionInfo(ceramic, commit);
+        }
+
+        const cached = await redisService.getFromCache<HistoryVersion>(key);
         if (cached !== null) {
             // Only refresh TTL if entry is anchored, otherwise we'll postpone refreshes
-            if (cached.time) keyBump(key, CACHE_TTL_ANCHORED);
+            if (cached.time) redisService.keyBump(key, CACHE_TTL_ANCHORED);
             return cached;
         }
         const fresh = await getFreshVersionInfo(ceramic, commit);
         const cacheTtl = fresh.time ? CACHE_TTL_ANCHORED : CACHE_TTL_PENDING;
-        setToCache(key, fresh, cacheTtl);
+        redisService.setToCache(key, fresh, cacheTtl);
         return fresh;
     });
 

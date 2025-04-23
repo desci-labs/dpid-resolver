@@ -10,9 +10,22 @@ import {
     type ResolveGenericParams,
     type ResolveGenericQueryParams,
 } from "./api/v2/resolvers/generic.js";
+import { createRedisService, shouldStartRedis, type RedisService } from "./redis.js";
 
 export const app: Express = express();
 const port = process.env.PORT || 5460;
+
+// Initialize Redis if configured
+export let redisService: RedisService | undefined;
+if (shouldStartRedis()) {
+    redisService = createRedisService({
+        host: process.env.REDIS_HOST!,
+        port: parseInt(process.env.REDIS_PORT!),
+    });
+    redisService.start().catch((err) => {
+        logger.error({ err }, "Failed to start Redis service");
+    });
+}
 
 app.use(pinoHttp({ logger }));
 app.use(express.json());
