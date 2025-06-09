@@ -4,6 +4,9 @@ import { pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
 import { getCodexHistory, type HistoryQueryResult } from "../queries/history.js";
 import { IPFS_GATEWAY } from "../../../util/config.js";
 import { MystTransformer, RoCrateTransformer } from "@desci-labs/desci-models";
+import { flightClient } from "../../../index.js";
+import { getStreamHistory } from "@desci-labs/desci-codex-lib/c1/resolve";
+import { cleanupEip155Address } from "../../../util/conversions.js";
 
 const CERAMIC_URL = process.env.CERAMIC_URL;
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
@@ -134,9 +137,15 @@ export const resolveCodexHandler = async (
 
 /** Resolve full stream history */
 export const resolveCodex = async (streamId: string, versionIx?: number): Promise<HistoryQueryResult> => {
-    const history = await getCodexHistory(streamId);
+    let history;
+    if (flightClient) {
+        history = await getStreamHistory(flightClient, streamId);
+        history.owner = cleanupEip155Address(history.owner);
+    } else {
+        history = await getCodexHistory(streamId);
+    }
 
-    if (versionIx !== undefined && versionIx > history.versions.length) {
+    if (versionIx !== undefined && versionIx > history.versions.length - 1) {
         throw new Error("versionIx out of bounds");
     }
 

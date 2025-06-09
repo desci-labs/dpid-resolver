@@ -16,15 +16,13 @@ const logger = pino({
     serializers: {
         files: omitBuffer,
     },
-    formatters: {
-        level: (label: string, _number: number) => {
-            return { severity: label };
-        },
-    },
     // Remove the default fields pid and hostname
     base: undefined,
     // Use ISO 8601 format for the timestamp
     timestamp: pino.stdTimeFunctions.isoTime,
+    mixin: (_context, level: number, logger) => {
+        return { level: logger.levels.labels[level] };
+    },
     transport: process.env.NODE_ENV === "production" ? undefined : { targets: [devTransport] },
     redact: {
         paths: [

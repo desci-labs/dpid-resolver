@@ -1,4 +1,16 @@
 {
+    "name": "dpid-resolver",
+    "version": "2.0.0",
+    "description": "An open-source HTTP resolver for dPIDs, bridging decentralized protocols to HTTP for scientific research artifact data",
+    "author": "Edvard Hübinette",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/desci-labs/dpid-resolver"
+    },
+    "license": "MIT",
+    "engines": {
+        "node": ">=20.0.0"
+    },
     "type": "module",
     "scripts": {
         "build": "tsc",
@@ -25,11 +37,11 @@
         "supertest": "^6.3.3",
         "tsx": "^4.15.6",
         "typescript": "^5.4.5",
-        "vitest": "^1.6.0"
+        "vitest": "^3.1.3"
     },
     "dependencies": {
         "@alch/alchemy-web3": "^1.4.7",
-        "@desci-labs/desci-codex-lib": "^1.1.7",
+        "@desci-labs/desci-codex-lib": "^2.0.0-rc1",
         "@desci-labs/desci-contracts": "^0.2.7",
         "@desci-labs/desci-models": "^0.2.25-rc1",
         "@supabase/supabase-js": "^2.43.5",

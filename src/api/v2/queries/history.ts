@@ -4,9 +4,10 @@ import { type CeramicClient } from "@desci-labs/desci-codex-lib";
 import parentLogger, { serializeError } from "../../../logger.js";
 import { DpidResolverError, resolveDpid } from "../resolvers/dpid.js";
 import { isDpid } from "../../../util/validation.js";
-import { CommitID, StreamID } from "@desci-labs/desci-codex-lib/dist/streams.js";
-import { redisService } from "../../../index.js";
+import { streams } from "@desci-labs/desci-codex-lib";
+import { flightClient, redisService } from "../../../index.js";
 import { cleanupEip155Address } from "../../../util/conversions.js";
+import { getStreamHistory, getStreamHistoryMultiple } from "@desci-labs/desci-codex-lib/c1/resolve";
 
 const MODULE_PATH = "api/v2/queries/history" as const;
 const logger = parentLogger.child({
@@ -98,7 +99,7 @@ export const historyQueryHandler = async (
     logger.info({ ids }, "handling history query");
 
     // Separate ids into streamIDs and dPIDs and handle both types
-    const dpids = ids.filter(isDpid).map(parseInt);
+    const dpids = ids.filter(isDpid).map((i) => parseInt(i, 10));
     const streamIds = ids.filter((i) => !isDpid(i));
 
     try {
@@ -131,24 +132,35 @@ export const historyQueryHandler = async (
 const getCodexHistories = async (streamIds: string[]): Promise<HistoryQueryResult[]> => {
     if (streamIds.length === 0) return [];
 
+    if (flightClient) {
+        return await getStreamHistoryMultiple(flightClient, streamIds);
+    }
+
     const historyPromises = streamIds.map((id) => getCodexHistory(id));
 
     const result = await Promise.all(historyPromises);
     return result;
 };
 
-const loadOpts = {
+const STREAM_LOAD_OPTS = {
     sync: 0, // PREFER_CACHE
     syncTimeoutSeconds: 3,
 };
 
-const getKeyForCommit = (commit: CommitID) => `resolver-${DPID_ENV}-commit-${commit.toString()}`;
+const getKeyForCommit = (commit: streams.CommitID) => `resolver-${DPID_ENV}-commit-${commit.toString()}`;
 
-export const getCodexHistory = async (streamId: string) => {
+export const getCodexHistory = async (streamId: string): Promise<HistoryQueryResult> => {
+    if (flightClient) {
+        return await getStreamHistory(flightClient, streamId);
+    }
+
+    // Below is used as fallback if flightClient is not instantiated
     const ceramic = getCeramicClient();
-    const streamID = StreamID.fromString(streamId);
-    const stream = await ceramic.loadStream(streamID);
-    const commitIds = stream.state.log.filter(({ type }) => type !== 2).map(({ cid }) => CommitID.make(streamID, cid));
+    const streamID = streams.StreamID.fromString(streamId);
+    const stream = await ceramic.loadStream(streamID, STREAM_LOAD_OPTS);
+    const commitIds = stream.state.log
+        .filter(({ type }) => type !== 2)
+        .map(({ cid }) => streams.CommitID.make(streamID, cid));
 
     const versionPromises = commitIds.map(async (commit) => {
         const key = getKeyForCommit(commit);
@@ -180,8 +192,8 @@ export const getCodexHistory = async (streamId: string) => {
     };
 };
 
-const getFreshVersionInfo = async (ceramic: CeramicClient, commit: CommitID): Promise<HistoryVersion> => {
-    const stream = await ceramic.loadStream(commit, loadOpts);
+const getFreshVersionInfo = async (ceramic: CeramicClient, commit: streams.CommitID): Promise<HistoryVersion> => {
+    const stream = await ceramic.loadStream(commit, STREAM_LOAD_OPTS);
 
     return {
         version: commit.toString(),

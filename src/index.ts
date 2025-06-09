@@ -11,7 +11,8 @@ import {
     type ResolveGenericQueryParams,
 } from "./api/v2/resolvers/generic.js";
 import { createRedisService, shouldStartRedis, type RedisService } from "./redis.js";
-
+import { CERAMIC_FLIGHT_URL } from "./util/config.js";
+import { newFlightSqlClient, FlightSqlClient } from "@desci-labs/desci-codex-lib/c1/clients";
 export const app: Express = express();
 const port = process.env.PORT || 5460;
 
@@ -25,6 +26,11 @@ if (shouldStartRedis()) {
     redisService.start().catch((err) => {
         logger.error({ err }, "Failed to start Redis service");
     });
+}
+
+export let flightClient: FlightSqlClient;
+if (CERAMIC_FLIGHT_URL) {
+    flightClient = await newFlightSqlClient(CERAMIC_FLIGHT_URL);
 }
 
 app.use(pinoHttp({ logger }));

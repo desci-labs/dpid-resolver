@@ -1,5 +1,7 @@
 import type { Request, Response } from "express";
 import { getComposeClient } from "../../../util/config.js";
+import { listResearchObjects } from "@desci-labs/desci-codex-lib/c1/explore";
+import { flightClient } from "../../../index.js";
 
 const gqlAllResearchObjects = `query {
   researchObjectIndex(first: 1000) {
@@ -14,7 +16,7 @@ const gqlAllResearchObjects = `query {
         title
       }
     }
-  } 
+  }
 }`;
 
 type GqlResearchObject = {
@@ -40,6 +42,11 @@ export const objectQueryHandler = async (
     _req: Request<unknown, unknown, unknown>,
     res: Response<ResearchObjectQueryResponse>,
 ): Promise<typeof res> => {
+    if (flightClient) {
+        const c1researchObjects = await listResearchObjects(flightClient);
+        return res.send(c1researchObjects);
+    }
+
     const composeClient = getComposeClient();
 
     const response = await composeClient.executeQuery<{
