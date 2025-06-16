@@ -51,7 +51,7 @@ app.use(function (_req, res, next) {
     next();
 });
 
-// Swagger documentation
+// Serve the interactive API docs
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 app.use("/api", api);
