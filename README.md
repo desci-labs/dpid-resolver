@@ -52,6 +52,20 @@ npm run start
 npm run tidy
 ```
 
+## API Documentation
+
+The API documentation is available at `/api-docs` when the server is running. This interactive documentation provides:
+
+-   Detailed endpoint descriptions
+-   Request/response schemas
+-   Example requests and responses
+-   Interactive testing interface
+
+To access the documentation:
+
+1. Start the server (`npm run dev` or `npm run start`)
+2. Visit `http://localhost:5460/api-docs` (or your configured port)
+
 ## Docker Deployment
 
 ```bash

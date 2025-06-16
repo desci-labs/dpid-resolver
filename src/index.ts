@@ -13,6 +13,9 @@ import {
 import { createRedisService, shouldStartRedis, type RedisService } from "./redis.js";
 import { CERAMIC_FLIGHT_URL } from "./util/config.js";
 import { newFlightSqlClient, FlightSqlClient } from "@desci-labs/desci-codex-lib/c1/clients";
+import swaggerUi from "swagger-ui-express";
+import { specs } from "./swagger.js";
+
 export const app: Express = express();
 const port = process.env.PORT || 5460;
 
@@ -47,6 +50,9 @@ app.use(function (_req, res, next) {
     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     next();
 });
+
+// Swagger documentation
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 app.use("/api", api);
 
