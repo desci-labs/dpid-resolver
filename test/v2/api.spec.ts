@@ -437,7 +437,7 @@ describe("dPID", { timeout: 10_000 }, function () {
             });
         });
 
-        describe.only("/objects", async () => {
+        describe("/objects", async () => {
             it("should return a list of research objects", async () => {
                 await request(app)
                     .get("/api/v2/query/objects")
