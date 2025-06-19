@@ -1,7 +1,8 @@
 import type { Request, Response } from "express";
 import { getComposeClient } from "../../../util/config.js";
 import { listResearchObjects } from "@desci-labs/desci-codex-lib/c1/explore";
-import { flightClient } from "../../../index.js";
+import logger from "../../../logger.js";
+import { flightClient } from "../../../flight.js";
 
 const gqlAllResearchObjects = `query {
   researchObjectIndex(first: 1000) {
@@ -43,8 +44,13 @@ export const objectQueryHandler = async (
     res: Response<ResearchObjectQueryResponse>,
 ): Promise<typeof res> => {
     if (flightClient) {
-        const c1researchObjects = await listResearchObjects(flightClient);
-        return res.send(c1researchObjects);
+        try {
+            const c1researchObjects = await listResearchObjects(flightClient);
+            return res.send(c1researchObjects);
+        } catch (error) {
+            logger.error(error, "Error fetching research objects");
+            return res.status(500).send("failed to fetch research objects with flight client");
+        }
     }
 
     const composeClient = getComposeClient();

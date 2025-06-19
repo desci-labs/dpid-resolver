@@ -145,7 +145,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.use("/dpid/:dpid/:versionIx?", resolveDpidHandler);
+router.get("/dpid/:dpid/:versionIx?", resolveDpidHandler);
 
 /**
  * @swagger
@@ -188,7 +188,7 @@ router.use("/dpid/:dpid/:versionIx?", resolveDpidHandler);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.use("/codex/:streamOrCommitId/:versionIx?", resolveCodexHandler);
+router.get("/codex/:streamOrCommitId/:versionIx?", resolveCodexHandler);
 
 /**
  * @swagger
@@ -263,6 +263,6 @@ router.use("/codex/:streamOrCommitId/:versionIx?", resolveCodexHandler);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.use("/*", resolveGenericHandler);
+router.get("/*", resolveGenericHandler);
 
 export default router;

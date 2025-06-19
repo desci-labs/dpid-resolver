@@ -1,6 +1,6 @@
 # dPID Resolver
 
-An open-source HTTP resolver for [dPID](https://dpid.org), bridging data the decentralized protocols used for data resolution to HTTP. The resolver handles requests for scientific research artifact data published on [CODEX](https://codex.desci.com), resolving data across Ceramic Network, on-chain smart contracts, and IPFS.
+An open-source HTTP resolver for [dPID](https://dpid.org), bridging data from the decentralized protocols used for publishing to HTTP. The resolver handles requests for scientific research artifact data published on [CODEX](https://codex.desci.com), resolving data across Ceramic Network, on-chain smart contracts, and IPFS.
 
 [DeSci Labs](https://desci.com) hosts two public resolvers:
 

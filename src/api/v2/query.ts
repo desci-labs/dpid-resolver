@@ -23,6 +23,19 @@ const router = Router();
  *         title:
  *           type: string
  *           description: Research object title
+ *     ResearchObjectHistory:
+ *       type: object
+ *       properties:
+ *         version:
+ *           type: string
+ *           description: Version identifier
+ *         manifest:
+ *           type: string
+ *           description: Manifest CID for this version
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp of version
  *     ResearchObjectQueryError:
  *       type: object
  *       properties:
@@ -63,7 +76,7 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/ResearchObjectQueryError'
  */
-router.use("/objects", objectQueryHandler);
+router.get("/objects", objectQueryHandler);
 
 /**
  * @swagger
@@ -71,28 +84,65 @@ router.use("/objects", objectQueryHandler);
  *   get:
  *     tags:
  *       - Query
- *     summary: Query for the history of one or more research objects
+ *     summary: Query for the history of a single research object
  *     description: |
- *       Query the version history of research objects. Can be called in two ways:
- *       1. Using path parameter to query a single object
- *       2. Using request body to query multiple objects
- *
- *       Each object is referenced by either:
+ *       Query the version history of a single research object using either:
  *       - dPID (e.g. 46)
  *       - stream ID (e.g. kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682)
  *     parameters:
  *       - in: path
  *         name: id
- *         required: false
+ *         required: true
  *         schema:
  *           oneOf:
  *             - type: string
  *               description: Stream ID
  *             - type: integer
  *               description: dPID
- *         description: Optional ID to get history for specific object (either stream ID or dPID)
+ *         description: ID to get history for specific object (either stream ID or dPID)
+ *     responses:
+ *       200:
+ *         description: History of the research object
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/ResearchObjectHistory'
+ *       400:
+ *         description: Invalid request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *       404:
+ *         description: Object not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ */
+router.get("/history/:id", historyQueryHandler);
+
+/**
+ * @swagger
+ * /v2/query/history:
+ *   post:
+ *     tags:
+ *       - Query
+ *     summary: Query for the history of multiple research objects
+ *     description: |
+ *       Query the version history of multiple research objects. Each object is referenced by either:
+ *       - dPID (e.g. 46)
+ *       - stream ID (e.g. kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682)
  *     requestBody:
- *       required: false
+ *       required: true
  *       content:
  *         application/json:
  *           schema:
@@ -113,23 +163,9 @@ router.use("/objects", objectQueryHandler);
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 versions:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       version:
- *                         type: string
- *                         description: Version identifier
- *                       manifest:
- *                         type: string
- *                         description: Manifest CID for this version
- *                       timestamp:
- *                         type: string
- *                         format: date-time
- *                         description: Timestamp of version
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/ResearchObjectHistory'
  *       400:
  *         description: Invalid request
  *         content:
@@ -137,7 +173,7 @@ router.use("/objects", objectQueryHandler);
  *             schema:
  *               $ref: '#/components/schemas/ResearchObjectQueryError'
  *       404:
- *         description: Object not found
+ *         description: One or more objects not found
  *         content:
  *           application/json:
  *             schema:
@@ -149,6 +185,6 @@ router.use("/objects", objectQueryHandler);
  *             schema:
  *               $ref: '#/components/schemas/ResearchObjectQueryError'
  */
-router.use("/history/:id?", historyQueryHandler);
+router.post("/history", historyQueryHandler);
 
 export default router;

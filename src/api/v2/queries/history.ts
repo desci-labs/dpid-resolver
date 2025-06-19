@@ -5,7 +5,8 @@ import parentLogger, { serializeError } from "../../../logger.js";
 import { DpidResolverError, resolveDpid } from "../resolvers/dpid.js";
 import { isDpid } from "../../../util/validation.js";
 import { streams } from "@desci-labs/desci-codex-lib";
-import { flightClient, redisService } from "../../../index.js";
+import { flightClient } from "../../../flight.js";
+import { redisService } from "../../../redis.js";
 import { cleanupEip155Address } from "../../../util/conversions.js";
 import { getStreamHistory, getStreamHistoryMultiple } from "@desci-labs/desci-codex-lib/c1/resolve";
 
@@ -171,12 +172,18 @@ export const getCodexHistory = async (streamId: string): Promise<HistoryQueryRes
         const cached = await redisService.getFromCache<HistoryVersion>(key);
         if (cached !== null) {
             // Only refresh TTL if entry is anchored, otherwise we'll postpone refreshes
-            if (cached.time) redisService.keyBump(key, CACHE_TTL_ANCHORED);
+            if (cached.time) {
+                void redisService.keyBump(key, CACHE_TTL_ANCHORED).catch((error) => {
+                    logger.warn({ error, key }, "Failed to bump Redis key TTL");
+                });
+            }
             return cached;
         }
         const fresh = await getFreshVersionInfo(ceramic, commit);
         const cacheTtl = fresh.time ? CACHE_TTL_ANCHORED : CACHE_TTL_PENDING;
-        redisService.setToCache(key, fresh, cacheTtl);
+        void redisService.setToCache(key, fresh, cacheTtl).catch((error) => {
+            logger.warn({ error, key }, "Failed to set Redis cache");
+        });
         return fresh;
     });
 

@@ -14,7 +14,7 @@ export const OPTIMISM_RPC_URL = getFromEnvOrThrow("OPTIMISM_RPC_URL");
 export const IPFS_GATEWAY = getFromEnvOrThrow("IPFS_GATEWAY");
 export const CERAMIC_URL = getFromEnvOrThrow("CERAMIC_URL");
 export const DPID_ENV = getFromEnvOrThrow("DPID_ENV");
-export const CERAMIC_FLIGHT_URL = process.env.CERAMIC_FLIGHT_URL;
+export const CERAMIC_FLIGHT_URL: string | undefined = process.env.CERAMIC_FLIGHT_URL;
 
 const VALID_ENVS = ["local", "dev", "staging", "production"];
 if (!VALID_ENVS.includes(DPID_ENV)) {

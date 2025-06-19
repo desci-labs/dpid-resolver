@@ -76,8 +76,14 @@ export function createRedisService(config: RedisConfig): RedisService {
             return null;
         }
 
-        logger.info({ fn: "getFromCache", key, op: "get" }, "key retrieved from cache");
-        return JSON.parse(result);
+        try {
+            logger.info({ fn: "getFromCache", key, op: "get" }, "key retrieved from cache");
+            return JSON.parse(result);
+        } catch (error) {
+            logger.error({ fn: "getFromCache", key, op: "parse", error }, "failed to parse cached value, purging key");
+            await client.del(key);
+            return null;
+        }
     }
 
     async function setToCache<T>(key: string, value: T, ttl: number): Promise<void> {
@@ -131,4 +137,17 @@ export function createRedisService(config: RedisConfig): RedisService {
         getFromCache,
         setToCache,
     };
+}
+
+// Export the redisService variable for external initialization
+export let redisService: RedisService | undefined;
+
+export async function maybeInitializeRedis(): Promise<void> {
+    if (shouldStartRedis()) {
+        redisService = createRedisService({
+            host: process.env.REDIS_HOST!,
+            port: parseInt(process.env.REDIS_PORT!),
+        });
+        await redisService.start();
+    }
 }

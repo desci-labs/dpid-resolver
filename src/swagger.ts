@@ -51,7 +51,7 @@ const options: swaggerJsdoc.Options = {
             {
                 name: "Resolve",
                 description:
-                    "Endpoints for resolving invidual research objects, by stream or dPID, to manifests and content",
+                    "Endpoints for resolving individual research objects, by stream or dPID, to manifests and content",
             },
             {
                 name: "Query",

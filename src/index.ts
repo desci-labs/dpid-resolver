@@ -8,31 +8,23 @@ import {
     type ResolveGenericParams,
     type ResolveGenericQueryParams,
 } from "./api/v2/resolvers/generic.js";
-import { createRedisService, shouldStartRedis, type RedisService } from "./redis.js";
-import { CERAMIC_FLIGHT_URL } from "./util/config.js";
-import { newFlightSqlClient, FlightSqlClient } from "@desci-labs/desci-codex-lib/c1/clients";
 import swaggerUi from "swagger-ui-express";
 import { specs } from "./swagger.js";
+import { maybeInitializeRedis } from "./redis.js";
+import { maybeInitializeFlightClient } from "./flight.js";
 
 export const app: Express = express();
 const port = process.env.PORT || 5460;
 
-// Initialize Redis if configured
-export let redisService: RedisService | undefined;
-if (shouldStartRedis()) {
-    redisService = createRedisService({
-        host: process.env.REDIS_HOST!,
-        port: parseInt(process.env.REDIS_PORT!),
-    });
-    redisService.start().catch((err) => {
-        logger.error({ err }, "Failed to start Redis service");
-    });
-}
-
-export let flightClient: FlightSqlClient;
-if (CERAMIC_FLIGHT_URL) {
-    flightClient = await newFlightSqlClient(CERAMIC_FLIGHT_URL);
-}
+// Initialize services
+void Promise.all([
+    maybeInitializeRedis().catch((err) => {
+        logger.error({ err }, "Failed to initialize Redis service");
+    }),
+    maybeInitializeFlightClient().catch((err) => {
+        logger.error({ err }, "Failed to initialize Flight client");
+    }),
+]);
 
 app.use(pinoHttp({ logger }));
 app.use(express.json());
@@ -45,7 +37,7 @@ app.use(express.json());
 app.use(function (_req, res, next) {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Headers", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     next();
 });
 

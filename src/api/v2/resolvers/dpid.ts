@@ -3,7 +3,7 @@ import parentLogger, { serializeError } from "../../../logger.js";
 import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, getDpidAliasRegistry } from "../../../util/config.js";
 import { ResolverError } from "../../../errors.js";
 import { getCodexHistory, type HistoryQueryResult, type HistoryVersion } from "../queries/history.js";
-import { redisService } from "../../../index.js";
+import { redisService } from "../../../redis.js";
 import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
 import { BigNumber } from "ethers";
 
@@ -107,7 +107,7 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
 
                 // Skip caching if dpid is unset to avoid resolution delay after publish
                 if (resolvedStream.length) {
-                    redisService.setToCache(streamCacheKey, resolvedStream, CACHE_TTL_ANCHORED);
+                    void redisService.setToCache(streamCacheKey, resolvedStream, CACHE_TTL_ANCHORED);
                 }
             } else {
                 resolvedStream = cachedStream;
@@ -152,8 +152,15 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
                     const asString = JSON.stringify(resolvedEntry);
                     // We know this leads to a legacy entry, could probably cache it for longer.
                     // It'll go stale if the dpid is upgraded, or the contracts are re-syced
-                    redisService.setToCache(legacyHistoryCacheKey, asString, CACHE_TTL_PENDING);
-                    redisService.setToCache(streamCacheKey, "", CACHE_TTL_PENDING);
+                    void redisService.setToCache(legacyHistoryCacheKey, asString, CACHE_TTL_PENDING).catch((error) => {
+                        logger.warn(
+                            { error, key: legacyHistoryCacheKey },
+                            "Failed to set Redis cache for legacy history",
+                        );
+                    });
+                    void redisService.setToCache(streamCacheKey, "", CACHE_TTL_PENDING).catch((error) => {
+                        logger.warn({ error, key: streamCacheKey }, "Failed to set Redis cache for stream");
+                    });
                 }
             } else {
                 resolvedEntry = JSON.parse(fromCache);
