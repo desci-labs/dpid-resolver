@@ -304,7 +304,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                             owner: "0x5249a44b2abea543b2c441ac4964a08deb3ed3cb",
                             versions: expect.arrayContaining([
                                 expect.objectContaining({
-                                    //time: 1721138810,
+                                    time: 1721138810,
                                     manifest: "bafkreiadq7ipg4wvc3wgebeym5wyflltsvnir5ocxygv6aqkddblz6yedi",
                                     version: "k3y52mos6605bnl6ftp35rba54vog7nf2ls6dd3e1b4nhne1z8rfplz82x878uyv4",
                                 }),
@@ -324,7 +324,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                             owner: "0x5249a44b2abea543b2c441ac4964a08deb3ed3cb",
                             versions: expect.arrayContaining([
                                 expect.objectContaining({
-                                    //time: 1721138810,
+                                    time: 1721138810,
                                     manifest: "bafkreiadq7ipg4wvc3wgebeym5wyflltsvnir5ocxygv6aqkddblz6yedi",
                                     version: "k3y52mos6605bnl6ftp35rba54vog7nf2ls6dd3e1b4nhne1z8rfplz82x878uyv4",
                                 }),
@@ -343,7 +343,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                 owner: "0x5249a44b2abea543b2c441ac4964a08deb3ed3cb",
                 versions: expect.arrayContaining([
                     expect.objectContaining({
-                        // time: 1721138810,
+                        time: 1721138810,
                         manifest: "bafkreiadq7ipg4wvc3wgebeym5wyflltsvnir5ocxygv6aqkddblz6yedi",
                         version: "k3y52mos6605bnl6ftp35rba54vog7nf2ls6dd3e1b4nhne1z8rfplz82x878uyv4",
                     }),
@@ -352,7 +352,7 @@ describe("dPID", { timeout: 10_000 }, function () {
 
             const philippsNodeLegacyMatcher = expect.objectContaining({
                 // dpid not upgraded, response from legacy mapping. Hence no id, and a slightly
-                // different tiemstamp due to tx mining
+                // different timestamp due to tx mining
                 id: "",
                 manifest: "bafkreiadq7ipg4wvc3wgebeym5wyflltsvnir5ocxygv6aqkddblz6yedi",
                 owner: "0x5249a44B2abEa543b2C441AC4964A08deB3Ed3CB",
