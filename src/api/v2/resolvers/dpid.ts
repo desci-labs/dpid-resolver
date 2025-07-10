@@ -104,7 +104,6 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
             const cachedStream = await redisService.getFromCache<string>(streamCacheKey);
             if (cachedStream === null) {
                 resolvedStream = await registry.resolve(dpid);
-
                 // Skip caching if dpid is unset to avoid resolution delay after publish
                 if (resolvedStream.length) {
                     void redisService.setToCache(streamCacheKey, resolvedStream, CACHE_TTL_ANCHORED);
@@ -157,9 +156,6 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
                             { error, key: legacyHistoryCacheKey },
                             "Failed to set Redis cache for legacy history",
                         );
-                    });
-                    void redisService.setToCache(streamCacheKey, "", CACHE_TTL_PENDING).catch((error) => {
-                        logger.warn({ error, key: streamCacheKey }, "Failed to set Redis cache for stream");
                     });
                 }
             } else {

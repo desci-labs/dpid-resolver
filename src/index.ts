@@ -12,9 +12,11 @@ import swaggerUi from "swagger-ui-express";
 import { specs } from "./swagger.js";
 import { maybeInitializeRedis } from "./redis.js";
 import { maybeInitializeFlightClient } from "./flight.js";
-
+import { setupProcessHandlers } from "./process.js";
 export const app: Express = express();
 const port = process.env.PORT || 5460;
+
+setupProcessHandlers();
 
 // Initialize services
 void Promise.all([
@@ -25,6 +27,9 @@ void Promise.all([
         logger.error({ err }, "Failed to initialize Flight client");
     }),
 ]);
+
+// Should probably check connectivity with ceramic/blockchain RPC/IPFS node
+app.use("/healthz", async (_req, res) => res.send("OK"));
 
 app.use(pinoHttp({ logger }));
 app.use(express.json());
@@ -45,9 +50,6 @@ app.use(function (_req, res, next) {
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 app.use("/api", api);
-
-// Should probably check connectivity with ceramic/blockchain RPC/IPFS node
-app.use("/healthz", async (_req, res) => res.send("OK"));
 
 app.get("/*", (req, res) =>
     resolveGenericHandler(req as Request<ResolveGenericParams, unknown, undefined, ResolveGenericQueryParams>, res),
