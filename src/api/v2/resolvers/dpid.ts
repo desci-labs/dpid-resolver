@@ -121,14 +121,38 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
     if (streamId !== "") {
         try {
             result = await getCodexHistory(streamId);
+
+            // Handle version selection for stream-based DPIDs
+            if (versionIx !== undefined) {
+                if (versionIx < 0 || versionIx >= result.versions.length) {
+                    throw new DpidResolverError({
+                        name: "DpidNotFound",
+                        message: `Version index ${versionIx} not found. Available versions: 0-${result.versions.length - 1}`,
+                        cause: new Error(`Invalid version index: ${versionIx}`),
+                    });
+                }
+                // Overwrite the top-level manifest with the specified version
+                result.manifest = result.versions[versionIx].manifest;
+                logger.info(
+                    { dpid, streamId, versionIx, manifest: result.manifest },
+                    "manifest resolved via stream with specific version",
+                );
+            } else {
+                logger.info(
+                    { dpid, streamId, manifest: result.manifest },
+                    "manifest resolved via stream with latest version",
+                );
+            }
         } catch (e) {
+            if (e instanceof DpidResolverError) {
+                throw e;
+            }
             throw new DpidResolverError({
                 name: "CeramicContactFailed",
                 message: "Failed to resolve; does the dpid (or version) exist?",
                 cause: e,
             });
         }
-        logger.info({ dpid, streamId, manifest: result.manifest }, "manifest resolved via stream");
         return result;
     }
 

@@ -2,14 +2,16 @@ import { afterAll, beforeAll, describe, it, vi } from "vitest";
 import request from "supertest";
 import assert from "assert";
 import { app } from "../src/index.js";
+import { getNodesUrl } from "../src/util/config.js";
 
-// Legacy resolver defaults to "regular" nodes for the unmatched localhost
-const NODES_URL = "https://nodes.desci.com";
+// Use the actual environment-based URL
+const NODES_URL = getNodesUrl();
 const IPFS_URL = "https://ipfs.desci.com/ipfs";
 
 describe("dPID resolution", { timeout: 5_000 }, function () {
     beforeAll(() => {
-        vi.stubEnv("FALLBACK_RESOLVER", "1");
+        vi.stubEnv("FALLBACK_RESOLVER", "0");
+        vi.stubEnv("DPID_ENV", "staging");
     });
 
     afterAll(() => {
