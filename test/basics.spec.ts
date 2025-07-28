@@ -88,7 +88,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
                 .then((res: TestResponse) => {
                     const value = res.header["location"];
 
-                    const expected = `${NODES_URL}/dpid/46/0`;
+                    const expected = `${NODES_URL}/dpid/46/v1`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err: Error) => {
@@ -105,7 +105,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
                 .then((res: TestResponse) => {
                     const value = res.header["location"];
 
-                    const expected = `${NODES_URL}/dpid/46/2`;
+                    const expected = `${NODES_URL}/dpid/46/v3`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err: Error) => {
@@ -156,7 +156,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
                 .then((res: TestResponse) => {
                     const value = res.header["location"];
 
-                    const expected = `${NODES_URL}/dpid/46/2/attestations`;
+                    const expected = `${NODES_URL}/dpid/46/v3/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err: Error) => {
@@ -207,7 +207,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
                 .then((res: TestResponse) => {
                     const value = res.header["location"];
 
-                    const expected = `${NODES_URL}/dpid/46/2/attestations/scientific-manuscript`;
+                    const expected = `${NODES_URL}/dpid/46/v3/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err: Error) => {
@@ -226,7 +226,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
                 .then((res: TestResponse) => {
                     const value = res.header["location"];
 
-                    const expected = `${IPFS_URL}/bafkreibghlpnl7d7wpn6r3a32b5z6f5cjxdz7b4wxgowkbfwqoazvlk2ui`;
+                    const expected = `${IPFS_URL}/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err: Error) => {
@@ -244,7 +244,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
                 .then((res: TestResponse) => {
                     const value = res.header["location"];
 
-                    const expected = `${IPFS_URL}/bafkreic6t6lf3loxvbwrqpb66mzqfuwfcv2ks6k7wgxaefxkh7i5a6x7ua`;
+                    const expected = `${IPFS_URL}/bafkreihge5qw7sc3mqc4wkf4cgpv6udtvrgipfxwyph7dhlyu6bkkt7tfq`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
                 .catch((err: Error) => {

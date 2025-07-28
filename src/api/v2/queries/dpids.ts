@@ -8,6 +8,77 @@ import { StreamID } from "@desci-labs/desci-codex-lib/dist/streams.js";
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 
+/**
+ * Helper function to build URL query parameters for pagination
+ */
+const buildUrlParams = (options: {
+    sort?: string;
+    includeHistory?: boolean;
+    includeMetadata?: boolean;
+    fields?: string;
+}) => {
+    const { sort, includeHistory, includeMetadata, fields } = options;
+
+    const sortParam = sort !== "desc" ? "" : "&sort=desc";
+    const historyParam = includeHistory ? "&history=true" : "";
+    const metadataParam = includeMetadata ? "&metadata=true" : "";
+    const fieldsParam = includeMetadata && fields ? `&fields=${fields}` : "";
+
+    return { sortParam, historyParam, metadataParam, fieldsParam };
+};
+
+/**
+ * Helper function to build pagination URLs
+ */
+const buildPaginationUrl = (
+    baseUrl: string,
+    page: number,
+    size: number,
+    params: { sortParam: string; historyParam: string; metadataParam: string; fieldsParam: string },
+) => {
+    const { sortParam, historyParam, metadataParam, fieldsParam } = params;
+    return `${baseUrl}?page=${page}&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`;
+};
+
+/**
+ * Helper function to build special pagination URLs (withHistory, withoutHistory, etc.)
+ */
+const buildSpecialPaginationUrl = (
+    baseUrl: string,
+    page: number,
+    size: number,
+    sort: string,
+    type: "withHistory" | "withoutHistory" | "withMetadata" | "withoutMetadata",
+    metadataFields: string[],
+    currentMetadata?: boolean,
+    currentFields?: string,
+) => {
+    const sortParam = sort !== "desc" ? "" : "&sort=desc";
+
+    switch (type) {
+        case "withHistory": {
+            const metadataParamForHistory = currentMetadata ? "&metadata=true" : "";
+            const fieldsParamForHistory = currentMetadata && currentFields ? `&fields=${currentFields}` : "";
+            return `${baseUrl}?page=${page}&size=${size}${sortParam}&history=true${metadataParamForHistory}${fieldsParamForHistory}`;
+        }
+        case "withoutHistory": {
+            const metadataParamForNoHistory = currentMetadata ? "&metadata=true" : "";
+            const fieldsParamForNoHistory = currentMetadata && currentFields ? `&fields=${currentFields}` : "";
+            return `${baseUrl}?page=${page}&size=${size}${sortParam}${metadataParamForNoHistory}${fieldsParamForNoHistory}`;
+        }
+        case "withMetadata": {
+            const historyParamForMetadata = currentMetadata ? "&history=true" : "";
+            return `${baseUrl}?page=${page}&size=${size}${sortParam}${historyParamForMetadata}&metadata=true&fields=${metadataFields.join(",")}`;
+        }
+        case "withoutMetadata": {
+            const historyParamForNoMetadata = currentMetadata ? "&history=true" : "";
+            return `${baseUrl}?page=${page}&size=${size}${sortParam}${historyParamForNoMetadata}`;
+        }
+        default:
+            return `${baseUrl}?page=${page}&size=${size}${sortParam}`;
+    }
+};
+
 // TypeScript type definitions - defined before usage
 export type ManifestMetadata = {
     title?: string;
@@ -459,10 +530,12 @@ export const dpidListHandler = async (
 
         if (totalDpids === 0) {
             const paginationBaseUrl = `${req.protocol}://${req.get("host")}/api/v2/query/dpids`;
-            const sortParam = sort !== "desc" ? "" : "&sort=desc";
-            const historyParam = includeHistory ? "&history=true" : "";
-            const metadataParam = includeMetadata ? "&metadata=true" : "";
-            const fieldsParam = includeMetadata && req.query.fields ? `&fields=${req.query.fields}` : "";
+            const urlParams = buildUrlParams({
+                sort,
+                includeHistory,
+                includeMetadata,
+                fields: req.query.fields,
+            });
 
             return res.json({
                 dpids: [],
@@ -473,22 +546,58 @@ export const dpidListHandler = async (
                     hasNext: false,
                     hasPrev: false,
                     links: {
-                        self: `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`,
-                        first: `${paginationBaseUrl}?page=1&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`,
+                        self: buildPaginationUrl(paginationBaseUrl, page, size, urlParams),
+                        first: buildPaginationUrl(paginationBaseUrl, 1, size, urlParams),
                         prev: null,
                         next: null,
-                        last: `${paginationBaseUrl}?page=1&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`,
+                        last: buildPaginationUrl(paginationBaseUrl, 1, size, urlParams),
                         withHistory: includeHistory
                             ? null
-                            : `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}&history=true${metadataParam}${fieldsParam}`,
+                            : buildSpecialPaginationUrl(
+                                  paginationBaseUrl,
+                                  page,
+                                  size,
+                                  sort,
+                                  "withHistory",
+                                  metadataFields,
+                                  includeMetadata,
+                                  req.query.fields,
+                              ),
                         withoutHistory: includeHistory
-                            ? `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}${metadataParam}${fieldsParam}`
+                            ? buildSpecialPaginationUrl(
+                                  paginationBaseUrl,
+                                  page,
+                                  size,
+                                  sort,
+                                  "withoutHistory",
+                                  metadataFields,
+                                  includeMetadata,
+                                  req.query.fields,
+                              )
                             : null,
                         withMetadata: includeMetadata
                             ? null
-                            : `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}${historyParam}&metadata=true&fields=${metadataFields.join(",")}`,
+                            : buildSpecialPaginationUrl(
+                                  paginationBaseUrl,
+                                  page,
+                                  size,
+                                  sort,
+                                  "withMetadata",
+                                  metadataFields,
+                                  includeHistory,
+                                  undefined,
+                              ),
                         withoutMetadata: includeMetadata
-                            ? `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}${historyParam}`
+                            ? buildSpecialPaginationUrl(
+                                  paginationBaseUrl,
+                                  page,
+                                  size,
+                                  sort,
+                                  "withoutMetadata",
+                                  metadataFields,
+                                  includeHistory,
+                                  undefined,
+                              )
                             : null,
                     },
                 },
@@ -578,10 +687,12 @@ export const dpidListHandler = async (
 
         // Build pagination links with history parameter
         const paginationBaseUrl = `${req.protocol}://${req.get("host")}/api/v2/query/dpids`;
-        const sortParam = sort !== "desc" ? "" : "&sort=desc";
-        const historyParam = includeHistory ? "&history=true" : "";
-        const metadataParam = includeMetadata ? "&metadata=true" : "";
-        const fieldsParam = includeMetadata && req.query.fields ? `&fields=${req.query.fields}` : "";
+        const urlParams = buildUrlParams({
+            sort,
+            includeHistory,
+            includeMetadata,
+            fields: req.query.fields,
+        });
         const lastPage = Math.ceil(totalDpids / size);
 
         return res.json({
@@ -593,27 +704,55 @@ export const dpidListHandler = async (
                 hasNext,
                 hasPrev,
                 links: {
-                    self: `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`,
-                    first: `${paginationBaseUrl}?page=1&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`,
-                    prev: hasPrev
-                        ? `${paginationBaseUrl}?page=${page - 1}&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`
-                        : null,
-                    next: hasNext
-                        ? `${paginationBaseUrl}?page=${page + 1}&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`
-                        : null,
-                    last: `${paginationBaseUrl}?page=${lastPage}&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`,
+                    self: buildPaginationUrl(paginationBaseUrl, page, size, urlParams),
+                    first: buildPaginationUrl(paginationBaseUrl, 1, size, urlParams),
+                    prev: hasPrev ? buildPaginationUrl(paginationBaseUrl, page - 1, size, urlParams) : null,
+                    next: hasNext ? buildPaginationUrl(paginationBaseUrl, page + 1, size, urlParams) : null,
+                    last: buildPaginationUrl(paginationBaseUrl, lastPage, size, urlParams),
                     // Self-documenting: show both history options
                     withHistory: includeHistory
                         ? null
-                        : `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}&history=true${metadataParam}${fieldsParam}`,
+                        : buildSpecialPaginationUrl(
+                              paginationBaseUrl,
+                              page,
+                              size,
+                              sort,
+                              "withHistory",
+                              metadataFields,
+                              includeMetadata,
+                              req.query.fields,
+                          ),
                     withoutHistory: includeHistory
-                        ? `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}${metadataParam}${fieldsParam}`
+                        ? buildSpecialPaginationUrl(
+                              paginationBaseUrl,
+                              page,
+                              size,
+                              sort,
+                              "withoutHistory",
+                              metadataFields,
+                              includeMetadata,
+                              req.query.fields,
+                          )
                         : null,
                     withMetadata: includeMetadata
                         ? null
-                        : `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}${historyParam}&metadata=true&fields=${metadataFields.join(",")}`,
+                        : buildSpecialPaginationUrl(
+                              paginationBaseUrl,
+                              page,
+                              size,
+                              sort,
+                              "withMetadata",
+                              metadataFields,
+                          ),
                     withoutMetadata: includeMetadata
-                        ? `${paginationBaseUrl}?page=${page}&size=${size}${sortParam}${historyParam}`
+                        ? buildSpecialPaginationUrl(
+                              paginationBaseUrl,
+                              page,
+                              size,
+                              sort,
+                              "withoutMetadata",
+                              metadataFields,
+                          )
                         : null,
                 },
             },
