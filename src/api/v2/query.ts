@@ -52,6 +52,150 @@ const router = Router();
  *         path:
  *           type: string
  *           description: API path where error occurred
+ *     DpidVersion:
+ *       type: object
+ *       properties:
+ *         index:
+ *           type: integer
+ *           description: Zero-based version index
+ *         cid:
+ *           type: string
+ *           description: IPFS CID for this version
+ *         time:
+ *           type: integer
+ *           nullable: true
+ *           description: Unix timestamp of version (null if pending)
+ *         resolveUrl:
+ *           type: string
+ *           description: URL to resolve this specific version
+ *     ManifestMetadata:
+ *       type: object
+ *       properties:
+ *         title:
+ *           type: string
+ *           description: Research object title
+ *         description:
+ *           type: string
+ *           description: Research object description
+ *         authors:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               orcid:
+ *                 type: string
+ *           description: Array of authors
+ *         keywords:
+ *           type: array
+ *           items:
+ *             type: string
+ *           description: Research keywords/tags
+ *         license:
+ *           type: string
+ *           description: License information
+ *     DpidQueryResult:
+ *       type: object
+ *       properties:
+ *         dpid:
+ *           type: integer
+ *           description: DPID number
+ *         owner:
+ *           type: string
+ *           description: Owner DID PKH address
+ *         latestCid:
+ *           type: string
+ *           description: Latest manifest CID
+ *         versionCount:
+ *           type: integer
+ *           description: Total number of versions
+ *         source:
+ *           type: string
+ *           enum: [ceramic, legacy]
+ *           description: Data source type
+ *         versions:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/DpidVersion'
+ *           description: Version history (only included when history=true)
+ *         metadata:
+ *           $ref: '#/components/schemas/ManifestMetadata'
+ *           description: Manifest metadata (only included when metadata=true)
+ *         links:
+ *           type: object
+ *           properties:
+ *             history:
+ *               type: string
+ *               description: URL to get full history
+ *             latest:
+ *               type: string
+ *               description: URL to resolve latest version
+ *             raw:
+ *               type: string
+ *               description: URL to get raw manifest
+ *     DpidListResponse:
+ *       type: object
+ *       properties:
+ *         dpids:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/DpidQueryResult'
+ *           description: Array of DPID results
+ *         pagination:
+ *           type: object
+ *           properties:
+ *             page:
+ *               type: integer
+ *               description: Current page number
+ *             size:
+ *               type: integer
+ *               description: Number of results per page
+ *             total:
+ *               type: integer
+ *               description: Total number of DPIDs
+ *             hasNext:
+ *               type: boolean
+ *               description: Whether there are more pages
+ *             hasPrev:
+ *               type: boolean
+ *               description: Whether there are previous pages
+ *             links:
+ *               type: object
+ *               properties:
+ *                 self:
+ *                   type: string
+ *                   description: Current page URL
+ *                 first:
+ *                   type: string
+ *                   description: First page URL
+ *                 prev:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Previous page URL
+ *                 next:
+ *                   type: string
+ *                   nullable: true
+ *                   description: Next page URL
+ *                 last:
+ *                   type: string
+ *                   description: Last page URL
+ *                 withHistory:
+ *                   type: string
+ *                   nullable: true
+ *                   description: URL with version history included
+ *                 withoutHistory:
+ *                   type: string
+ *                   nullable: true
+ *                   description: URL without version history
+ *                 withMetadata:
+ *                   type: string
+ *                   nullable: true
+ *                   description: URL with manifest metadata included
+ *                 withoutMetadata:
+ *                   type: string
+ *                   nullable: true
+ *                   description: URL without manifest metadata
  */
 
 /**
@@ -208,7 +352,178 @@ router.get("/objects", objectQueryHandler);
 router.use("/history/:id?", historyQueryHandler);
 router.post("/history", historyQueryHandler);
 
-/** Query for all DPIDs with pagination and version info */
+/**
+ * @swagger
+ * /v2/query/dpids:
+ *   get:
+ *     tags:
+ *       - Query
+ *     summary: List all DPIDs with pagination, version history, and metadata
+ *     description: |
+ *       Retrieve a paginated list of all DPIDs in the system. This endpoint is ideal for:
+ *       - **Browse pages**: Get overview of all research objects with optional metadata
+ *       - **Search implementations**: Paginate through DPIDs with filtering
+ *       - **Analytics**: Understand publication patterns and volume
+ *
+ *       ## Key Features
+ *       - **Pagination**: Navigate through large DPID collections efficiently
+ *       - **Optional History**: Include complete version history per DPID (`history=true`)
+ *       - **Optional Metadata**: Resolve manifest metadata like titles, authors (`metadata=true`)
+ *       - **Field Selection**: Choose specific metadata fields (`fields=title,authors`)
+ *       - **Sorting**: Control order with `sort=asc|desc` (newest first by default)
+ *       - **Smart Links**: Self-documenting pagination URLs for discovery
+ *
+ *       ## Common Usage Patterns
+ *
+ *       **Browse Page (Basic)**:
+ *       ```
+ *       GET /v2/query/dpids?page=1&size=20&metadata=true&fields=title,authors
+ *       ```
+ *
+ *       **Browse Page (with History)**:
+ *       ```
+ *       GET /v2/query/dpids?page=1&size=10&history=true&metadata=true
+ *       ```
+ *
+ *       **Analytics/Stats**:
+ *       ```
+ *       GET /v2/query/dpids?page=1&size=100&sort=asc
+ *       ```
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number (1-based)
+ *       - in: query
+ *         name: size
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *         description: Number of DPIDs per page (max 100)
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order by DPID number (desc = newest first)
+ *       - in: query
+ *         name: history
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Include complete version history for each DPID
+ *         example: true
+ *       - in: query
+ *         name: metadata
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Resolve IPFS manifest metadata (authors, title, etc.)
+ *         example: true
+ *       - in: query
+ *         name: fields
+ *         schema:
+ *           type: string
+ *           default: "title,authors"
+ *         description: |
+ *           Comma-separated metadata fields to include when metadata=true.
+ *           Available: title, authors, description, keywords, license
+ *         example: "title,authors,description"
+ *     responses:
+ *       200:
+ *         description: Paginated list of DPIDs with optional history and metadata
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DpidListResponse'
+ *             examples:
+ *               basic:
+ *                 summary: Basic pagination without history or metadata
+ *                 value:
+ *                   dpids:
+ *                     - dpid: 557
+ *                       owner: "0x1234567890abcdef1234567890abcdef12345678"
+ *                       latestCid: "bafkreiasyoawbtjotfckd7yi33t4rxidiqusrwj6g2hb2gsczw35nlt4we"
+ *                       versionCount: 1
+ *                       source: "ceramic"
+ *                       links:
+ *                         history: "http://localhost:5461/api/v2/query/history/557"
+ *                         latest: "http://localhost:5461/api/v2/resolve/dpid/557"
+ *                         raw: "http://localhost:5461/557?raw"
+ *                   pagination:
+ *                     page: 1
+ *                     size: 1
+ *                     total: 557
+ *                     hasNext: true
+ *                     hasPrev: false
+ *                     links:
+ *                       self: "http://localhost:5461/api/v2/query/dpids?page=1&size=1"
+ *                       first: "http://localhost:5461/api/v2/query/dpids?page=1&size=1"
+ *                       next: "http://localhost:5461/api/v2/query/dpids?page=2&size=1"
+ *                       last: "http://localhost:5461/api/v2/query/dpids?page=557&size=1"
+ *                       withHistory: "http://localhost:5461/api/v2/query/dpids?page=1&size=1&history=true"
+ *                       withMetadata: "http://localhost:5461/api/v2/query/dpids?page=1&size=1&metadata=true&fields=title,authors"
+ *               withMetadata:
+ *                 summary: With manifest metadata resolved
+ *                 value:
+ *                   dpids:
+ *                     - dpid: 557
+ *                       owner: "0x1234567890abcdef1234567890abcdef12345678"
+ *                       latestCid: "bafkreiasyoawbtjotfckd7yi33t4rxidiqusrwj6g2hb2gsczw35nlt4we"
+ *                       versionCount: 1
+ *                       source: "ceramic"
+ *                       metadata:
+ *                         title: "Sleep Duration Research Proposal"
+ *                         authors:
+ *                           - name: "John Doe"
+ *                             orcid: "0000-0000-0000-0000"
+ *                       links:
+ *                         history: "http://localhost:5461/api/v2/query/history/557"
+ *                         latest: "http://localhost:5461/api/v2/resolve/dpid/557"
+ *                         raw: "http://localhost:5461/557?raw"
+ *                   pagination:
+ *                     page: 1
+ *                     size: 1
+ *                     total: 557
+ *                     hasNext: true
+ *                     hasPrev: false
+ *                     links:
+ *                       self: "http://localhost:5461/api/v2/query/dpids?page=1&size=1&metadata=true&fields=title,authors"
+ *                       withoutMetadata: "http://localhost:5461/api/v2/query/dpids?page=1&size=1"
+ *       400:
+ *         description: Invalid query parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *             examples:
+ *               invalidPage:
+ *                 summary: Invalid page parameter
+ *                 value:
+ *                   error: "Invalid page parameter"
+ *                   details: "Page must be a positive integer"
+ *                   params: { page: "0", size: "20" }
+ *                   path: "/api/v2/query/dpids"
+ *               invalidSize:
+ *                 summary: Invalid size parameter
+ *                 value:
+ *                   error: "Invalid size parameter"
+ *                   details: "Size must be between 1 and 100"
+ *                   params: { page: "1", size: "200" }
+ *                   path: "/api/v2/query/dpids"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ */
 router.get("/dpids", dpidListHandler);
 
 export default router;

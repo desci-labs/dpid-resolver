@@ -80,7 +80,10 @@ export const resolveGenericHandler = async (
         });
     }
 
-    const isRaw = query.raw !== undefined || query.format === "raw";
+    // Default to raw format to avoid CORS issues from redirects to nodes.desci.com
+    // Treat undefined, "raw", and "json" as raw to prevent redirects
+    const isRaw =
+        query.raw !== undefined || query.format === "raw" || query.format === "json" || query.format === undefined;
     const isJsonld = query.jsonld !== undefined || query.format === "jsonld";
     const isMyst = query.format === "myst";
 
