@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import request from "supertest";
+import { createRequire } from "module";
 import assert from "assert";
 import { app } from "../../src/index.js";
 import type { getCodexHistory } from "../../src/api/v2/queries/history.js";
+
+// Use createRequire to import CommonJS supertest in ESM environment
+const require = createRequire(import.meta.url);
+const request = require("supertest");
+
+// Simple interface for supertest response
+interface TestResponse {
+    header: Record<string, string>;
+    status: number;
+    body: unknown;
+    [key: string]: unknown;
+}
 
 type ResearchObject = Awaited<ReturnType<typeof getCodexHistory>> & {
     license?: string;
@@ -17,13 +29,13 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -34,14 +46,14 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/v1")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v1`;
 
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -52,7 +64,7 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/v4")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v4`;
@@ -64,7 +76,7 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/0")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v1`;
@@ -76,7 +88,7 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/2")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v3`;
@@ -88,7 +100,7 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/v4/root/exploring-lupus-report.pdf")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v4/root/exploring-lupus-report.pdf`;
@@ -100,7 +112,7 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/v4/root/exploring-lupus")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v4/root/exploring-lupus`;
@@ -111,13 +123,13 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/attestations")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -128,13 +140,13 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/v2/attestations")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v2/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -145,13 +157,13 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/2/attestations")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v3/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -162,13 +174,13 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/attestations/scientific-manuscript")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -179,13 +191,13 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/v2/attestations/scientific-manuscript")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v2/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -196,13 +208,13 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/2/attestations/scientific-manuscript")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v3/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -215,7 +227,7 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/v1?raw")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${IPFS_URL}/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u`;
@@ -228,7 +240,7 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46?raw")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${IPFS_URL}/bafkreihge5qw7sc3mqc4wkf4cgpv6udtvrgipfxwyph7dhlyu6bkkt7tfq`;
@@ -248,7 +260,7 @@ describe("dPID", { timeout: 10_000 }, function () {
             await request(app)
                 .get("/46/v1/root/.nodeKeep?raw")
                 .expect(302)
-                .then((res) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${IPFS_URL}/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep`;
@@ -263,7 +275,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                 await request(app)
                     .get("/api/v2/resolve/dpid/46")
                     .expect(200)
-                    .expect((res) =>
+                    .expect((res: TestResponse) =>
                         expect(res.body).toMatchObject({
                             id: "",
                             owner: "0xF0C6957a0CaFf18D4a18E1CE99b769d20026685e",
@@ -283,8 +295,8 @@ describe("dPID", { timeout: 10_000 }, function () {
                 await request(app)
                     .get("/api/v2/resolve/dpid/46/3")
                     .expect(200)
-                    .expect((res) =>
-                        expect(res.body.manifest).toEqual(
+                    .expect((res: TestResponse) =>
+                        expect((res.body as { manifest: string }).manifest).toEqual(
                             // fourth published CID
                             "bafkreibn3jhdlsdsonv25t7i2bwtrbkl3jzwjbnnwylpeih3jmmzdhsfmi",
                         ),
@@ -297,7 +309,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                 await request(app)
                     .get("/api/v2/resolve/codex/kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols")
                     .expect(200)
-                    .expect((res) =>
+                    .expect((res: TestResponse) =>
                         expect(res.body).toMatchObject({
                             id: "kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols",
                             manifest: "bafkreiadq7ipg4wvc3wgebeym5wyflltsvnir5ocxygv6aqkddblz6yedi",
@@ -317,7 +329,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                 await request(app)
                     .get("/api/v2/resolve/codex/k3y52mos6605bnl6ftp35rba54vog7nf2ls6dd3e1b4nhne1z8rfplz82x878uyv4")
                     .expect(200)
-                    .expect((res) =>
+                    .expect((res: TestResponse) =>
                         expect(res.body).toMatchObject({
                             id: "kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols",
                             manifest: "bafkreiadq7ipg4wvc3wgebeym5wyflltsvnir5ocxygv6aqkddblz6yedi",
@@ -369,14 +381,18 @@ describe("dPID", { timeout: 10_000 }, function () {
                 await request(app)
                     .get("/api/v2/query/history/kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols")
                     .expect(200)
-                    .expect((res) => expect(res.body).toEqual(expect.arrayContaining([philippsNodeStreamMatcher])));
+                    .expect((res: TestResponse) =>
+                        expect(res.body).toEqual(expect.arrayContaining([philippsNodeStreamMatcher])),
+                    );
             });
 
             it("accepts dpid param", async () => {
                 await request(app)
                     .get("/api/v2/query/history/299")
                     .expect(200)
-                    .expect((res) => expect(res.body).toEqual(expect.arrayContaining([philippsNodeLegacyMatcher])));
+                    .expect((res: TestResponse) =>
+                        expect(res.body).toEqual(expect.arrayContaining([philippsNodeLegacyMatcher])),
+                    );
             });
 
             it("accepts streamid array body", async () => {
@@ -384,7 +400,9 @@ describe("dPID", { timeout: 10_000 }, function () {
                     .post("/api/v2/query/history")
                     .send({ ids: ["kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols"] })
                     .expect(200)
-                    .expect((res) => expect(res.body).toEqual(expect.arrayContaining([philippsNodeStreamMatcher])));
+                    .expect((res: TestResponse) =>
+                        expect(res.body).toEqual(expect.arrayContaining([philippsNodeStreamMatcher])),
+                    );
             });
 
             it("accepts dpid array body", async () => {
@@ -392,7 +410,9 @@ describe("dPID", { timeout: 10_000 }, function () {
                     .post("/api/v2/query/history")
                     .send({ ids: ["299"] })
                     .expect(200)
-                    .expect((res) => expect(res.body).toEqual(expect.arrayContaining([philippsNodeLegacyMatcher])));
+                    .expect((res: TestResponse) =>
+                        expect(res.body).toEqual(expect.arrayContaining([philippsNodeLegacyMatcher])),
+                    );
             });
 
             it("accepts mixed dpid and streamid array body", async () => {
@@ -400,7 +420,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                     .post("/api/v2/query/history")
                     .send({ ids: ["299", "kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols"] })
                     .expect(200)
-                    .expect((res) =>
+                    .expect((res: TestResponse) =>
                         expect(res.body).toEqual(
                             expect.arrayContaining([philippsNodeStreamMatcher, philippsNodeLegacyMatcher]),
                         ),
@@ -412,7 +432,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                     .post("/api/v2/query/history")
                     .send({ ids: ["299", "299"] })
                     .expect(200)
-                    .expect((res) =>
+                    .expect((res: TestResponse) =>
                         expect(res.body).toEqual(
                             expect.arrayContaining([philippsNodeLegacyMatcher, philippsNodeLegacyMatcher]),
                         ),
@@ -429,7 +449,7 @@ describe("dPID", { timeout: 10_000 }, function () {
                         ],
                     })
                     .expect(200)
-                    .expect((res) =>
+                    .expect((res: TestResponse) =>
                         expect(res.body).toEqual(
                             expect.arrayContaining([philippsNodeStreamMatcher, philippsNodeStreamMatcher]),
                         ),
