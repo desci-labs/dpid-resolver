@@ -1,5 +1,5 @@
-FROM node:20.13.1-alpine3.20 AS base
-RUN apk update && apk add --no-cache bash dumb-init
+FROM node:20.13.1-slim AS base
+RUN apt-get update && apt-get install -y dumb-init curl jq && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
 COPY package*.json ./

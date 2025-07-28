@@ -3,7 +3,7 @@ import parentLogger from "../../../logger.js";
 import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, getDpidAliasRegistry } from "../../../util/config.js";
 import { ResolverError } from "../../../errors.js";
 import { getCodexHistory, type HistoryQueryResult, type HistoryVersion } from "../queries/history.js";
-import { getFromCache, setToCache } from "../../../redis.js";
+import { redisService } from "../../../redis.js";
 import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
 import { BigNumber } from "ethers";
 import { isVersionString } from "../../../util/validation.js";
@@ -133,14 +133,20 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
     /** Empty string if dpid unmapped in registry */
     let streamId: string;
     try {
-        let resolvedStream = await getFromCache<string>(streamCacheKey);
-        if (resolvedStream === null) {
-            resolvedStream = await registry.resolve(dpid);
-
-            // Skip caching if dpid is unset to avoid resolution delay after publish
-            if (resolvedStream.length) {
-                setToCache(streamCacheKey, resolvedStream, CACHE_TTL_ANCHORED);
+        let resolvedStream: string;
+        if (redisService) {
+            const cachedStream = await redisService.getFromCache<string>(streamCacheKey);
+            if (cachedStream === null) {
+                resolvedStream = await registry.resolve(dpid);
+                // Skip caching if dpid is unset to avoid resolution delay after publish
+                if (resolvedStream.length) {
+                    void redisService.setToCache(streamCacheKey, resolvedStream, CACHE_TTL_ANCHORED);
+                }
+            } else {
+                resolvedStream = cachedStream;
             }
+        } else {
+            resolvedStream = await registry.resolve(dpid);
         }
         streamId = resolvedStream;
     } catch (e) {
@@ -193,24 +199,32 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
     logger.info({ dpid }, "alias not mapped, falling back to legacy lookup");
     try {
         const legacyHistoryCacheKey = getKeyForLegacyEntry(dpid);
-        const fromCache = await getFromCache<string>(legacyHistoryCacheKey);
-
         let resolvedEntry: DpidAliasRegistry.LegacyDpidEntryStructOutput;
-        if (fromCache === null) {
-            resolvedEntry = await registry.legacyLookup(dpid);
-            if (resolvedEntry.owner.length) {
-                const asString = JSON.stringify(resolvedEntry);
-                // We know this leads to a legacy entry, could probably cache it for longer.
-                // It'll go stale if the dpid is upgraded, or the contracts are re-syced
-                setToCache(legacyHistoryCacheKey, asString, CACHE_TTL_PENDING);
-                setToCache(streamCacheKey, "", CACHE_TTL_PENDING);
+
+        if (redisService) {
+            const fromCache = await redisService.getFromCache<string>(legacyHistoryCacheKey);
+            if (fromCache === null) {
+                resolvedEntry = await registry.legacyLookup(dpid);
+                if (resolvedEntry.owner.length) {
+                    const asString = JSON.stringify(resolvedEntry);
+                    // We know this leads to a legacy entry, could probably cache it for longer.
+                    // It'll go stale if the dpid is upgraded, or the contracts are re-syced
+                    void redisService.setToCache(legacyHistoryCacheKey, asString, CACHE_TTL_PENDING).catch((error) => {
+                        logger.warn(
+                            { error, key: legacyHistoryCacheKey },
+                            "Failed to set Redis cache for legacy history",
+                        );
+                    });
+                }
+            } else {
+                resolvedEntry = JSON.parse(fromCache);
+                // The BigNumbers are deserialized into objects, which ethers.BigNumber can instantiate from
+                resolvedEntry[1].forEach((v) => {
+                    v[1] = BigNumber.from(v[1]);
+                });
             }
         } else {
-            resolvedEntry = JSON.parse(fromCache);
-            // The BigNumbers are deserialized into objects, which ethers.BigNumber can instantiate from
-            resolvedEntry[1].forEach((v) => {
-                v[1] = BigNumber.from(v[1]);
-            });
+            resolvedEntry = await registry.legacyLookup(dpid);
         }
 
         const owner = resolvedEntry[0];

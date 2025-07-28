@@ -24,23 +24,10 @@ spec:
                 vault.hashicorp.com/agent-inject-secret-config: secrets/dpid-resolver/production
                 vault.hashicorp.com/agent-inject-template-config: |
                     {{- with secret "secrets/dpid-resolver/production" -}}
-                    echo "appstart"; 
-                    export NODE_ENV={{ .Data.NODE_ENV }}
-                    export SUPABASE_URL={{ .Data.SUPABASE_URL }}
-                    export SUPABASE_KEY={{ .Data.SUPABASE_KEY }}
-
-                    export DPID_ENV={{ .Data.DPID_ENV }}
-                    export IPFS_GATEWAY={{ .Data.IPFS_GATEWAY}}
-                    export OPTIMISM_RPC_URL={{ .Data.OPTIMISM_RPC_URL }}
-                    export CERAMIC_URL={{ .Data.CERAMIC_URL }}
-                    export FALLBACK_RESOLVER={{ .Data.FALLBACK_RESOLVER }}
-
-                    export REDIS_HOST={{ .Data.REDIS_HOST }}
-                    export REDIS_PORT={{ .Data.REDIS_PORT }}
-                    export CACHE_TTL_ANCHORED={{ .Data.CACHE_TTL_ANCHORED }}
-                    export CACHE_TTL_PENDING={{ .Data.CACHE_TTL_PENDING }}
-                    echo "loaded"
-                    {{- end -}}
+                    {{- range $k, $v := .Data }}
+                    export {{ $k }}={{ $v }}
+                    {{- end }}
+                    {{- end }}
             labels:
                 App: DpidResolver
         spec:

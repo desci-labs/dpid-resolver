@@ -4,9 +4,11 @@ import { type CeramicClient } from "@desci-labs/desci-codex-lib";
 import parentLogger, { serializeError } from "../../../logger.js";
 import { DpidResolverError, resolveDpid } from "../resolvers/dpid.js";
 import { isDpid } from "../../../util/validation.js";
-import { CommitID, StreamID } from "@desci-labs/desci-codex-lib/dist/streams.js";
-import { getFromCache, keyBump, setToCache } from "../../../redis.js";
+import { streams } from "@desci-labs/desci-codex-lib";
+import { flightClient } from "../../../flight.js";
+import { redisService } from "../../../redis.js";
 import { cleanupEip155Address } from "../../../util/conversions.js";
+import { getStreamHistory, getStreamHistoryMultiple } from "@desci-labs/desci-codex-lib/c1/resolve";
 
 const MODULE_PATH = "api/v2/queries/history" as const;
 const logger = parentLogger.child({
@@ -98,7 +100,7 @@ export const historyQueryHandler = async (
     logger.info({ ids }, "handling history query");
 
     // Separate ids into streamIDs and dPIDs and handle both types
-    const dpids = ids.filter(isDpid).map(parseInt);
+    const dpids = ids.filter(isDpid).map((i) => parseInt(i, 10));
     const streamIds = ids.filter((i) => !isDpid(i));
 
     try {
@@ -131,102 +133,88 @@ export const historyQueryHandler = async (
 const getCodexHistories = async (streamIds: string[]): Promise<HistoryQueryResult[]> => {
     if (streamIds.length === 0) return [];
 
+    if (flightClient) {
+        return await getStreamHistoryMultiple(flightClient, streamIds);
+    }
+
     const historyPromises = streamIds.map((id) => getCodexHistory(id));
 
     const result = await Promise.all(historyPromises);
     return result;
 };
 
-const loadOpts = {
+const STREAM_LOAD_OPTS = {
     sync: 0, // PREFER_CACHE
     syncTimeoutSeconds: 3,
 };
 
-const getKeyForCommit = (commit: CommitID) => `resolver-${DPID_ENV}-commit-${commit.toString()}`;
+const getKeyForCommit = (commit: streams.CommitID) => `resolver-${DPID_ENV}-commit-${commit.toString()}`;
 
-export const getCodexHistory = async (streamId: string) => {
+export const getCodexHistory = async (streamId: string): Promise<HistoryQueryResult> => {
     const startTime = Date.now();
-    const ceramic = getCeramicClient();
 
+    if (flightClient) {
+        const result = await getStreamHistory(flightClient, streamId);
+        const totalTime = Date.now() - startTime;
+        logger.info({ streamId, totalTime, source: "flightClient" }, "getCodexHistory completed");
+        return result;
+    }
+
+    // Below is used as fallback if flightClient is not instantiated
+    const ceramic = getCeramicClient();
     const loadStreamStart = Date.now();
-    const streamID = StreamID.fromString(streamId);
-    const stream = await ceramic.loadStream(streamID);
+    const streamID = streams.StreamID.fromString(streamId);
+    const stream = await ceramic.loadStream(streamID, STREAM_LOAD_OPTS);
     const loadStreamTime = Date.now() - loadStreamStart;
 
-    const filterCommitsStart = Date.now();
-    const commitIds = stream.state.log.filter(({ type }) => type !== 2).map(({ cid }) => CommitID.make(streamID, cid));
-    const filterCommitsTime = Date.now() - filterCommitsStart;
+    const commitIds = stream.state.log
+        .filter(({ type }) => type !== 2)
+        .map(({ cid }) => streams.CommitID.make(streamID, cid));
 
-    const versionPromisesStart = Date.now();
+    let cacheHits = 0;
+    let cacheMisses = 0;
     const versionPromises = commitIds.map(async (commit) => {
-        const cacheStart = Date.now();
         const key = getKeyForCommit(commit);
-        const cached = await getFromCache<HistoryVersion>(key);
-        const cacheTime = Date.now() - cacheStart;
-
-        if (cached !== null) {
-            // Only refresh TTL if entry is anchored, otherwise we'll postpone refreshes
-            if (cached.time) keyBump(key, CACHE_TTL_ANCHORED);
-            return {
-                ...cached,
-                _timing: { cacheTime, fromCache: true, freshTime: 0 },
-            };
+        if (!redisService) {
+            cacheMisses++;
+            return await getFreshVersionInfo(ceramic, commit);
         }
 
-        const freshStart = Date.now();
+        const cached = await redisService.getFromCache<HistoryVersion>(key);
+        if (cached !== null) {
+            cacheHits++;
+            // Only refresh TTL if entry is anchored, otherwise we'll postpone refreshes
+            if (cached.time) {
+                void redisService.keyBump(key, CACHE_TTL_ANCHORED).catch((error) => {
+                    logger.warn({ error, key }, "Failed to bump Redis key TTL");
+                });
+            }
+            return cached;
+        }
+        cacheMisses++;
         const fresh = await getFreshVersionInfo(ceramic, commit);
-        const freshTime = Date.now() - freshStart;
-
         const cacheTtl = fresh.time ? CACHE_TTL_ANCHORED : CACHE_TTL_PENDING;
-        setToCache(key, fresh, cacheTtl);
-        return {
-            ...fresh,
-            _timing: { cacheTime, fromCache: false, freshTime },
-        };
+        void redisService.setToCache(key, fresh, cacheTtl).catch((error) => {
+            logger.warn({ error, key }, "Failed to set Redis cache");
+        });
+        return fresh;
     });
 
-    const versionsWithTiming = await Promise.all(versionPromises);
-    const versionPromisesTime = Date.now() - versionPromisesStart;
-
+    const versions = await Promise.all(versionPromises);
     const totalTime = Date.now() - startTime;
-
-    // Extract timing info for logging
-    const cacheHits = versionsWithTiming.filter((v) => v._timing.fromCache).length;
-    const cacheMisses = versionsWithTiming.filter((v) => !v._timing.fromCache).length;
-    const avgCacheTime =
-        versionsWithTiming.length > 0
-            ? Math.round(
-                  versionsWithTiming.reduce((sum, v) => sum + v._timing.cacheTime, 0) / versionsWithTiming.length,
-              )
-            : 0;
-    const avgFreshTime =
-        cacheMisses > 0
-            ? Math.round(
-                  versionsWithTiming
-                      .filter((v) => !v._timing.fromCache)
-                      .reduce((sum, v) => sum + v._timing.freshTime, 0) / cacheMisses,
-              )
-            : 0;
 
     logger.info(
         {
             streamId,
             totalTime,
             loadStreamTime,
-            filterCommitsTime,
-            versionPromisesTime,
             commitCount: commitIds.length,
             cacheHits,
             cacheMisses,
-            avgCacheTime,
-            avgFreshTime,
+            source: "ceramic",
         },
         "getCodexHistory timing breakdown",
     );
-
-    // Clean up the timing fields from versions
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const cleanVersions = versionsWithTiming.map(({ _timing, ...rest }) => rest);
 
     return {
         id: streamId,
@@ -234,12 +222,12 @@ export const getCodexHistory = async (streamId: string) => {
         owner: cleanupEip155Address(stream.state.metadata.controllers[0]),
         // Latest manifest CID
         manifest: stream.content.manifest as string,
-        versions: cleanVersions,
+        versions,
     };
 };
 
-const getFreshVersionInfo = async (ceramic: CeramicClient, commit: CommitID): Promise<HistoryVersion> => {
-    const stream = await ceramic.loadStream(commit, loadOpts);
+const getFreshVersionInfo = async (ceramic: CeramicClient, commit: streams.CommitID): Promise<HistoryVersion> => {
+    const stream = await ceramic.loadStream(commit, STREAM_LOAD_OPTS);
 
     return {
         version: commit.toString(),

@@ -1,90 +1,159 @@
 import { createClient } from "redis";
+import type { RedisClientType } from "redis";
 import parentLogger from "./logger.js";
-
-const port = parseInt(process.env.REDIS_PORT || "6379");
-const host = process.env.REDIS_HOST || "localhost";
-const isRedisEnabled = process.env.REDIS_ENABLED !== "false"; // Allow disabling Redis
 
 const logger = parentLogger.child({
     module: "redis.ts",
-    port,
-    host,
-    enabled: isRedisEnabled,
 });
 
-export const redisClient = createClient({
-    socket: {
-        host,
-        port,
-        reconnectStrategy: (retries) => Math.min(retries * 500, 5_000),
-    },
-});
+export function shouldStartRedis(): boolean {
+    const host = process.env.REDIS_HOST;
+    const port = process.env.REDIS_PORT;
+    const isRedisEnabled = process.env.REDIS_ENABLED !== "false"; // Allow disabling Redis
 
-async function initRedisClient() {
     if (!isRedisEnabled) {
-        logger.info({ fn: "initRedisClient" }, "Redis is disabled via REDIS_ENABLED=false");
-        return;
+        logger.info({ fn: "shouldStartRedis" }, "Redis is disabled via REDIS_ENABLED=false");
+        return false;
     }
 
-    if (!process.env.REDIS_HOST || !process.env.REDIS_PORT) {
-        logger.warn({ fn: "initRedisClient" }, "Redis host or port is not defined, using local defaults");
-        return;
+    if (!host || !port) {
+        logger.warn({ host, port }, "Redis host or port is not defined, Redis service will not start");
+        return false;
     }
 
-    if (!redisClient.isOpen) {
-        await redisClient.connect();
-    }
+    return true;
 }
 
-initRedisClient();
-
-redisClient.on("connect", () => {
-    logger.info("Client successfully connected");
-});
-
-redisClient.on("error", (err) => {
-    logger.error({ err }, "Client error");
-});
-
-export async function keyBump(key: string, ttl: number): Promise<void> {
-    if (!redisClient.isReady) {
-        logger.error({ fn: "keyBump", key, op: "bump" }, "client not connected");
-        return;
-    }
-    logger.info({ fn: "keyBump", key, op: "bump" }, "refreshing cache ttl");
-    await redisClient.expire(key, ttl);
+export interface RedisService {
+    start: () => Promise<void>;
+    stop: () => Promise<void>;
+    keyBump: (key: string, ttl: number) => Promise<void>;
+    getFromCache: <T>(key: string) => Promise<T | null>;
+    setToCache: <T>(key: string, value: T, ttl: number) => Promise<void>;
 }
 
-export async function getFromCache<T>(key: string): Promise<T | null> {
-    if (!isRedisEnabled) {
-        return null; // Gracefully return null when Redis is disabled
-    }
-
-    if (!redisClient.isReady) {
-        logger.error({ fn: "getFromCache", key, op: "get" }, "client not connected");
-        return null;
-    }
-
-    const result = await redisClient.get(key);
-    if (result === null) {
-        logger.info({ fn: "getFromCache", key, op: "get" }, "key not found");
-        return null;
-    }
-
-    logger.info({ fn: "getFromCache", key, op: "get" }, "key retrieved from cache");
-    return JSON.parse(result);
+export interface RedisConfig {
+    host: string;
+    port: number;
 }
 
-export async function setToCache<T>(key: string, value: T, ttl: number): Promise<void> {
-    if (!isRedisEnabled) {
-        return; // Gracefully return when Redis is disabled
+export function createRedisService(config: RedisConfig): RedisService {
+    let client: RedisClientType | null = null;
+    let isRunning = false;
+
+    const redisClient = createClient({
+        socket: {
+            host: config.host,
+            port: config.port,
+            reconnectStrategy: (retries) => {
+                const backoff = Math.min(1_000 * 2 ** retries, 300_000);
+                logger.info({ fn: "reconnectStrategy", retries, backoff }, "reconnecting...");
+                return backoff;
+            },
+        },
+    }) as RedisClientType;
+
+    redisClient.on("connect", () => {
+        logger.info("Client successfully connected");
+    });
+
+    redisClient.on("error", (err) => {
+        logger.error({ err }, "Client error");
+    });
+
+    async function keyBump(key: string, ttl: number): Promise<void> {
+        if (!client?.isReady) {
+            logger.error({ fn: "keyBump", key, op: "bump" }, "client not connected");
+            return;
+        }
+        logger.info({ fn: "keyBump", key, op: "bump" }, "refreshing cache ttl");
+        await client.expire(key, ttl);
     }
 
-    if (!redisClient.isReady) {
-        logger.error({ fn: "setToCache", key, op: "set" }, "client not connected");
-        return;
+    async function getFromCache<T>(key: string): Promise<T | null> {
+        if (!client?.isReady) {
+            logger.error({ fn: "getFromCache", key, op: "get" }, "client not connected");
+            return null;
+        }
+
+        const result = await client.get(key);
+        if (result === null) {
+            logger.info({ fn: "getFromCache", key, op: "get" }, "key not found");
+            return null;
+        }
+
+        try {
+            logger.info({ fn: "getFromCache", key, op: "get" }, "key retrieved from cache");
+            return JSON.parse(result);
+        } catch (error) {
+            logger.error({ fn: "getFromCache", key, op: "parse", error }, "failed to parse cached value, purging key");
+            await client.del(key);
+            return null;
+        }
     }
 
-    await redisClient.set(key, JSON.stringify(value), { EX: ttl });
-    logger.info({ fn: "setToCache", key, op: "set" }, "added value to cache");
+    async function setToCache<T>(key: string, value: T, ttl: number): Promise<void> {
+        if (!client?.isReady) {
+            logger.error({ fn: "setToCache", key, op: "set" }, "client not connected");
+            return;
+        }
+
+        await client.set(key, JSON.stringify(value), { EX: ttl });
+        logger.info({ fn: "setToCache", key, op: "set" }, "added value to cache");
+    }
+
+    return {
+        async start() {
+            if (isRunning) {
+                logger.warn("Redis service is already running");
+                return;
+            }
+
+            try {
+                logger.info({ host: config.host, port: config.port }, "Starting Redis service");
+                client = redisClient;
+                await client.connect();
+                isRunning = true;
+            } catch (error) {
+                logger.error(error, "Error starting Redis service");
+                throw error;
+            }
+        },
+
+        async stop() {
+            if (!isRunning) {
+                logger.warn("Redis service is not running");
+                return;
+            }
+
+            try {
+                logger.info("Stopping Redis service");
+                if (client) {
+                    await client.quit();
+                }
+                isRunning = false;
+                client = null;
+            } catch (error) {
+                logger.error(error, "Error stopping Redis service");
+                throw error;
+            }
+        },
+
+        keyBump,
+        getFromCache,
+        setToCache,
+    };
+}
+
+// Export the redisService variable for external initialization
+export let redisService: RedisService | undefined;
+
+export async function maybeInitializeRedis(): Promise<void> {
+    if (shouldStartRedis()) {
+        redisService = createRedisService({
+            host: process.env.REDIS_HOST!,
+            port: parseInt(process.env.REDIS_PORT!),
+        });
+        await redisService.start();
+    }
 }
