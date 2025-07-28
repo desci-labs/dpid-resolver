@@ -8,5 +8,6 @@ export default defineConfig({
         // the two files invoke the app on the same port
         fileParallelism: false,
         env: config({ path: ".env.test" }).parsed,
+        reporters: ["verbose"],
     },
 });

@@ -244,10 +244,8 @@ export class DpidReader {
                     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                     (dataSuffix!.length > 0 ? CID_MAP[dataBucket.payload.cid] : defaultGateway) || defaultGateway;
                 const dagTestURl = `${selectedGateway.replace(/\/ipfs$/, "")}/api/v0/dag/get?arg=${arg}`;
-                console.log(dagTestURl, "dagTestURl");
                 try {
                     const { data } = await axios({ method: "POST", url: dagTestURl });
-                    console.log("posted");
                     if (!data.Data || data.Data["/"].bytes !== "CAE") {
                         return `${selectedGateway}/${arg}`;
                     } else {

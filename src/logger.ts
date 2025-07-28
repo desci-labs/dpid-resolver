@@ -16,6 +16,13 @@ const logger = pino({
     serializers: {
         files: omitBuffer,
     },
+    // Remove the default fields pid and hostname
+    base: undefined,
+    // Use ISO 8601 format for the timestamp
+    timestamp: pino.stdTimeFunctions.isoTime,
+    mixin: (_context, level: number, logger) => {
+        return { level: logger.levels.labels[level] };
+    },
     transport: process.env.NODE_ENV === "production" ? undefined : { targets: [devTransport] },
     redact: {
         paths: [
@@ -40,7 +47,3 @@ function omitBuffer(array: any) {
 }
 
 export const serializeError = (e: Error) => pino.stdSerializers.err(e);
-
-process.on("uncaughtException", (err) => {
-    logger.fatal(err, "uncaught exception");
-});

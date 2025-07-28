@@ -1,14 +1,17 @@
+import { errWithCause } from "pino-std-serializers";
 import parentLogger from "./logger.js";
 
 const logger = parentLogger.child({
     module: "process.ts",
 });
 
-process.on("uncaughtException", (error) => {
-    logger.fatal({ error }, "exiting on uncaught exception");
-    process.exit(1);
-});
+export const setupProcessHandlers = () => {
+    process.on("uncaughtException", (error) => {
+        logger.fatal(errWithCause(error), "exiting on uncaught exception");
+        process.exit(1);
+    });
 
-process.on("exit", (code) => {
-    logger.info({ code }, "process exiting");
-});
+    process.on("exit", (code) => {
+        logger.info({ code }, "process exiting");
+    });
+};
