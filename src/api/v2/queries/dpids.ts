@@ -7,7 +7,20 @@ import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typecha
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 
-// TypeScript interfaces to replace any types
+// TypeScript type definitions - defined before usage
+export type ManifestMetadata = {
+    title?: string;
+    description?: string;
+    authors?: Array<{
+        name?: string;
+        orcid?: string;
+    }>;
+    keywords?: string[];
+    license?: string;
+    [key: string]: unknown; // Allow additional metadata fields
+};
+
+// Internal interfaces for type safety
 interface ManifestData {
     title?: string;
     description?: string;
@@ -113,18 +126,6 @@ export type DpidVersion = {
     cid: string;
     time: number | undefined;
     resolveUrl: string;
-};
-
-export type ManifestMetadata = {
-    title?: string;
-    description?: string;
-    authors?: Array<{
-        name?: string;
-        orcid?: string;
-    }>;
-    keywords?: string[];
-    license?: string;
-    [key: string]: unknown; // Allow additional metadata fields
 };
 
 export type DpidQueryResult = {
