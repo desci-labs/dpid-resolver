@@ -4,6 +4,7 @@ import parentLogger from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
 import { getCodexHistory } from "../queries/history.js";
 import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
+import { StreamID } from "@desci-labs/desci-codex-lib/dist/streams.js";
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 
@@ -268,7 +269,6 @@ const getLightweightDpidInfo = async (
                     const historyStart = Date.now();
 
                     // Just load the stream for basic info, don't fetch full history
-                    const StreamID = (await import("@desci-labs/desci-codex-lib/dist/streams.js")).StreamID;
                     const streamID = StreamID.fromString(streamId);
                     const stream = await ceramic.loadStream(streamID);
 
