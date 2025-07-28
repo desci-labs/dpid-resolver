@@ -145,26 +145,88 @@ const loadOpts = {
 const getKeyForCommit = (commit: CommitID) => `resolver-${DPID_ENV}-commit-${commit.toString()}`;
 
 export const getCodexHistory = async (streamId: string) => {
+    const startTime = Date.now();
     const ceramic = getCeramicClient();
+
+    const loadStreamStart = Date.now();
     const streamID = StreamID.fromString(streamId);
     const stream = await ceramic.loadStream(streamID);
-    const commitIds = stream.state.log.filter(({ type }) => type !== 2).map(({ cid }) => CommitID.make(streamID, cid));
+    const loadStreamTime = Date.now() - loadStreamStart;
 
+    const filterCommitsStart = Date.now();
+    const commitIds = stream.state.log.filter(({ type }) => type !== 2).map(({ cid }) => CommitID.make(streamID, cid));
+    const filterCommitsTime = Date.now() - filterCommitsStart;
+
+    const versionPromisesStart = Date.now();
     const versionPromises = commitIds.map(async (commit) => {
+        const cacheStart = Date.now();
         const key = getKeyForCommit(commit);
         const cached = await getFromCache<HistoryVersion>(key);
+        const cacheTime = Date.now() - cacheStart;
+
         if (cached !== null) {
             // Only refresh TTL if entry is anchored, otherwise we'll postpone refreshes
             if (cached.time) keyBump(key, CACHE_TTL_ANCHORED);
-            return cached;
+            return {
+                ...cached,
+                _timing: { cacheTime, fromCache: true, freshTime: 0 },
+            };
         }
+
+        const freshStart = Date.now();
         const fresh = await getFreshVersionInfo(ceramic, commit);
+        const freshTime = Date.now() - freshStart;
+
         const cacheTtl = fresh.time ? CACHE_TTL_ANCHORED : CACHE_TTL_PENDING;
         setToCache(key, fresh, cacheTtl);
-        return fresh;
+        return {
+            ...fresh,
+            _timing: { cacheTime, fromCache: false, freshTime },
+        };
     });
 
-    const versions = await Promise.all(versionPromises);
+    const versionsWithTiming = await Promise.all(versionPromises);
+    const versionPromisesTime = Date.now() - versionPromisesStart;
+
+    const totalTime = Date.now() - startTime;
+
+    // Extract timing info for logging
+    const cacheHits = versionsWithTiming.filter((v) => v._timing.fromCache).length;
+    const cacheMisses = versionsWithTiming.filter((v) => !v._timing.fromCache).length;
+    const avgCacheTime =
+        versionsWithTiming.length > 0
+            ? Math.round(
+                  versionsWithTiming.reduce((sum, v) => sum + v._timing.cacheTime, 0) / versionsWithTiming.length,
+              )
+            : 0;
+    const avgFreshTime =
+        cacheMisses > 0
+            ? Math.round(
+                  versionsWithTiming
+                      .filter((v) => !v._timing.fromCache)
+                      .reduce((sum, v) => sum + v._timing.freshTime, 0) / cacheMisses,
+              )
+            : 0;
+
+    logger.info(
+        {
+            streamId,
+            totalTime,
+            loadStreamTime,
+            filterCommitsTime,
+            versionPromisesTime,
+            commitCount: commitIds.length,
+            cacheHits,
+            cacheMisses,
+            avgCacheTime,
+            avgFreshTime,
+        },
+        "getCodexHistory timing breakdown",
+    );
+
+    // Clean up the timing fields from versions
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const cleanVersions = versionsWithTiming.map(({ _timing, ...rest }) => rest);
 
     return {
         id: streamId,
@@ -172,7 +234,7 @@ export const getCodexHistory = async (streamId: string) => {
         owner: cleanupEip155Address(stream.state.metadata.controllers[0]),
         // Latest manifest CID
         manifest: stream.content.manifest as string,
-        versions,
+        versions: cleanVersions,
     };
 };
 

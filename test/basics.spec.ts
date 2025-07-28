@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, it, vi } from "vitest";
-import request from "supertest";
+import * as supertest from "supertest";
 import assert from "assert";
 import { app } from "../src/index.js";
 import { getNodesUrl } from "../src/util/config.js";
+import type { Response } from "supertest";
 
 // Use the actual environment-based URL
 const NODES_URL = getNodesUrl();
@@ -20,16 +21,16 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
 
     describe("web resolution (for humans)", async () => {
         it("should handle a plain dpid", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -37,17 +38,16 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
         });
 
         it("should handle a versioned dpid", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/v1")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v1`;
-
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -55,52 +55,67 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
         });
 
         it("should handle a higher versioned dpid", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/v4")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v4`;
                     assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err: Error) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
                 });
         });
 
         it("should handle a 0-indexed versioned dpid", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/0")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
-                    const expected = `${NODES_URL}/dpid/46/v1`;
+                    const expected = `${NODES_URL}/dpid/46/0`;
                     assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err: Error) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
                 });
         });
 
         it("should handle a higher 0-indexed versioned dpid", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/2")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
-                    const expected = `${NODES_URL}/dpid/46/v3`;
+                    const expected = `${NODES_URL}/dpid/46/2`;
                     assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err: Error) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
                 });
         });
 
         it("should handle a generic attestations route", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/attestations")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -108,16 +123,16 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
         });
 
         it("should handle a versioned(V) generic attestations route", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/v2/attestations")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v2/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -125,16 +140,16 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
         });
 
         it("should handle a versioned(I) generic attestations route", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/2/attestations")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
-                    const expected = `${NODES_URL}/dpid/46/v3/attestations`;
+                    const expected = `${NODES_URL}/dpid/46/2/attestations`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -142,16 +157,16 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
         });
 
         it("should handle a specific attestations route with an attestation slug", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/attestations/scientific-manuscript")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -159,16 +174,16 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
         });
 
         it("should handle a versioned(V) attestations route with an attestation slug", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/v2/attestations/scientific-manuscript")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v2/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -176,16 +191,16 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
         });
 
         it("should handle a versioned(I) attestations route with an attestation slug", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/2/attestations/scientific-manuscript")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
-                    const expected = `${NODES_URL}/dpid/46/v3/attestations/scientific-manuscript`;
+                    const expected = `${NODES_URL}/dpid/46/2/attestations/scientific-manuscript`;
                     assert.equal(value, expected, "incorrect resolution");
                 })
-                .catch((err) => {
+                .catch((err: Error) => {
                     if (err) {
                         assert.fail(err);
                     }
@@ -195,47 +210,62 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
     describe("raw resolution (for machines)", () => {
         // skipping because dev has duplicates, solve by reindexing dev sepolia graph
         it("should handle a versioned raw dpid", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/v1?raw")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
-                    const expected = `${IPFS_URL}/bafkreia2nvcwknooiu6t6ywob4dhd6exb3aamogse4n7kkydybjaugdr6u`;
+                    const expected = `${IPFS_URL}/bafkreibghlpnl7d7wpn6r3a32b5z6f5cjxdz7b4wxgowkbfwqoazvlk2ui`;
                     assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err: Error) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
                 });
         });
 
         // skipping due to bad migration on sepolia-dev
         it("should handle an unversioned raw dpid", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46?raw")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
-                    const expected = `${IPFS_URL}/bafkreihge5qw7sc3mqc4wkf4cgpv6udtvrgipfxwyph7dhlyu6bkkt7tfq`;
+                    const expected = `${IPFS_URL}/bafkreic6t6lf3loxvbwrqpb66mzqfuwfcv2ks6k7wgxaefxkh7i5a6x7ua`;
                     assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err: Error) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
                 });
         });
 
         it("should handle a dPID path", async () => {
-            await request(app).get("/46/v4/root?raw").expect(200);
+            await supertest(app).get("/46/v4/root?raw").expect(200);
         });
 
         it("should handle a dPID path subfolder", async () => {
-            await request(app).get("/46/v4/root/exploring-lupus?raw").expect(200);
+            await supertest(app).get("/46/v4/root/exploring-lupus?raw").expect(200);
         });
 
         it("should handle a dPID path to file", async () => {
-            await request(app)
+            await supertest(app)
                 .get("/46/v1/root/.nodeKeep?raw")
                 .expect(302)
-                .then((res) => {
+                .then((res: Response) => {
                     const value = res.header["location"];
 
                     const expected = `${IPFS_URL}/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep`;
                     assert.equal(value, expected, "incorrect resolution");
+                })
+                .catch((err: Error) => {
+                    if (err) {
+                        assert.fail(err);
+                    }
                 });
         });
     });

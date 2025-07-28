@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
-import parentLogger, { serializeError } from "../../../logger.js";
+import parentLogger from "../../../logger.js";
 import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, getDpidAliasRegistry } from "../../../util/config.js";
 import { ResolverError } from "../../../errors.js";
 import { getCodexHistory, type HistoryQueryResult, type HistoryVersion } from "../queries/history.js";
 import { getFromCache, setToCache } from "../../../redis.js";
 import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
 import { BigNumber } from "ethers";
+import { isVersionString } from "../../../util/validation.js";
 
 const MODULE_PATH = "/api/v2/resolvers/dpid" as const;
 const logger = parentLogger.child({
@@ -13,9 +14,9 @@ const logger = parentLogger.child({
 });
 
 export type ResolveDpidRequest = {
-    dpid: number;
-    /** Zero-indexed version */
-    versionIx?: number;
+    dpid: string; // Route params are always strings
+    /** Zero-indexed version, comes as string from route */
+    versionIx?: string;
 };
 
 export type ResolveDpidResponse = HistoryQueryResult | ResolveDpidError;
@@ -46,33 +47,66 @@ export const resolveDpidHandler = async (
 
     const { dpid, versionIx } = req.params;
 
+    // Parse version string to numeric index if needed
+    let parsedVersionIx: number | undefined;
+    if (versionIx && isVersionString(versionIx)) {
+        parsedVersionIx = getVersionIndex(versionIx);
+        logger.info({ dpid, versionIx, parsedVersionIx }, "parsed version string");
+    } else if (versionIx) {
+        // If versionIx exists but isn't a valid version string, it's invalid
+        const errPayload = {
+            error: "Invalid version format",
+            details: `Version '${versionIx}' must be a number or 'vN' format (e.g., 'v1', 'v2')`,
+            params: req.params,
+            path: MODULE_PATH,
+        };
+        return res.status(400).json(errPayload);
+    }
+
     let result: HistoryQueryResult;
     try {
-        result = await resolveDpid(dpid, versionIx);
+        result = await resolveDpid(parseInt(dpid), parsedVersionIx);
     } catch (e) {
         if (e instanceof DpidResolverError) {
             const errPayload = {
                 error: e.message,
-                details: serializeError(e.cause),
+                details: e.cause,
                 params: req.params,
                 path: MODULE_PATH,
             };
-            logger.error(errPayload);
-            return res.status(500).send(errPayload);
+            logger.error({ details: e.cause, params: req.params, path: req.path, error: e.message });
+            return res.status(404).json(errPayload); // Use 404 for DpidNotFound errors
         } else {
-            const err = e as Error;
+            const error = e as Error;
             const errPayload = {
-                error: err.message,
-                details: serializeError(err),
+                error: "failed to lookup legacy dpid",
+                details: {
+                    type: error.constructor.name,
+                    message: error.message,
+                    stack: error.stack,
+                },
                 params: req.params,
                 path: MODULE_PATH,
             };
-            logger.error(errPayload, "Unexpected error occurred");
-            return res.status(501).send(errPayload);
+            logger.error({ details: errPayload.details, params: req.params, path: req.path, error: errPayload.error });
+            return res.status(500).json(errPayload);
         }
     }
 
-    return res.status(200).send(result);
+    return res.json(result);
+};
+
+/**
+ * Convert version string to 0-based index
+ * e.g., "v1" -> 0, "v6" -> 5, "3" -> 3
+ */
+const getVersionIndex = (versionString: string): number => {
+    if (versionString.startsWith("v")) {
+        // Convert 1-based to 0-based indexing
+        return parseInt(versionString.slice(1)) - 1;
+    } else {
+        return parseInt(versionString);
+    }
 };
 
 /** HistoryQueryResult possibly without stream ID and commit IDs, in case
@@ -181,7 +215,23 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
 
         const owner = resolvedEntry[0];
         const versions = undupeIfLegacyDevHistory(resolvedEntry[1]);
-        const requestedVersion = versions[versionIx ?? versions.length - 1];
+
+        // Apply the same version validation as the Ceramic path
+        let validatedVersionIx: number;
+        if (versionIx !== undefined) {
+            if (versionIx < 0 || versionIx >= versions.length) {
+                throw new DpidResolverError({
+                    name: "DpidNotFound",
+                    message: `Version index ${versionIx} not found. Available versions: 0-${versions.length - 1}`,
+                    cause: new Error(`Invalid version index: ${versionIx}`),
+                });
+            }
+            validatedVersionIx = versionIx;
+        } else {
+            validatedVersionIx = versions.length - 1; // Default to latest version
+        }
+
+        const requestedVersion = versions[validatedVersionIx];
 
         result = {
             // No StreamID available

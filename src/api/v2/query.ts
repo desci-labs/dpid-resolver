@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { objectQueryHandler } from "./queries/objects.js";
 import { historyQueryHandler } from "./queries/history.js";
+import { dpidListHandler } from "./queries/dpids.js";
 
 const router = Router();
 
@@ -8,5 +9,7 @@ const router = Router();
 router.use("/objects", objectQueryHandler);
 /** Query for the history of one or more research objects */
 router.use("/history/:id?", historyQueryHandler);
+/** Query for all DPIDs with pagination and version info */
+router.get("/dpids", dpidListHandler);
 
 export default router;
