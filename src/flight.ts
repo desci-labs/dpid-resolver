@@ -1,8 +1,18 @@
 import logger from "./logger.js";
 import { CERAMIC_FLIGHT_URL } from "./util/config.js";
 
-// Use type import to avoid runtime issues during dynamic import
-type FlightSqlClient = unknown; // Will be properly typed at runtime
+// Define proper interface for FlightSqlClient based on @ceramic-sdk/flight-sql-client
+interface FlightSqlClient {
+    // Flight SQL client for querying Ceramic streams
+    // Based on @ceramic-sdk/flight-sql-client actual interface
+    query: (query: string) => Promise<Buffer>;
+    feedQuery: (query: string) => Promise<{ next(): Promise<Buffer | null> }>;
+    preparedQuery: (query: string, params: Array<[string, string]>) => Promise<Buffer>;
+    preparedFeedQuery: (query: string, params: Array<[string, string]>) => Promise<{ next(): Promise<Buffer | null> }>;
+    getCatalogs: () => Promise<Buffer>;
+    getDbSchemas: (options: { catalog?: string; includeSchema?: boolean }) => Promise<Buffer>;
+    getTables: (options: { catalog?: string; includeSchema?: boolean }) => Promise<Buffer>;
+}
 
 export let flightClient: FlightSqlClient | undefined;
 

@@ -80,10 +80,16 @@ export const resolveGenericHandler = async (
         });
     }
 
-    // Default to raw format to avoid CORS issues from redirects to nodes.desci.com
-    // Treat undefined, "raw", and "json" as raw to prevent redirects
+    // Smart format detection to avoid CORS issues while preserving human-readable redirects
+    // Default to raw for API requests (to prevent CORS), but redirect browsers to Nodes
+    const acceptHeader = req.headers.accept || "";
+    const isApiRequest = acceptHeader.includes("application/json") && !acceptHeader.includes("text/html");
+
     const isRaw =
-        query.raw !== undefined || query.format === "raw" || query.format === "json" || query.format === undefined;
+        query.raw !== undefined ||
+        query.format === "raw" ||
+        (query.format === undefined && isApiRequest) ||
+        query.format === "json";
     const isJsonld = query.jsonld !== undefined || query.format === "jsonld";
     const isMyst = query.format === "myst";
 
