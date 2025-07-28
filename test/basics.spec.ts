@@ -1,9 +1,19 @@
 import { afterAll, beforeAll, describe, it, vi } from "vitest";
-import * as supertest from "supertest";
+import { createRequire } from "module";
 import assert from "assert";
 import { app } from "../src/index.js";
 import { getNodesUrl } from "../src/util/config.js";
-import type { Response } from "supertest";
+
+// Use createRequire to import CommonJS supertest in ESM environment
+const require = createRequire(import.meta.url);
+const supertest = require("supertest");
+
+// Simple interface for supertest response
+interface TestResponse {
+    header: Record<string, string>;
+    status: number;
+    [key: string]: unknown;
+}
 
 // Use the actual environment-based URL
 const NODES_URL = getNodesUrl();
@@ -24,7 +34,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46`;
@@ -41,7 +51,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/v1")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v1`;
@@ -58,7 +68,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/v4")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v4`;
@@ -75,7 +85,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/0")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/0`;
@@ -92,7 +102,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/2")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/2`;
@@ -109,7 +119,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/attestations")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/attestations`;
@@ -126,7 +136,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/v2/attestations")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v2/attestations`;
@@ -143,7 +153,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/2/attestations")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/2/attestations`;
@@ -160,7 +170,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/attestations/scientific-manuscript")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/attestations/scientific-manuscript`;
@@ -177,7 +187,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/v2/attestations/scientific-manuscript")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/v2/attestations/scientific-manuscript`;
@@ -194,7 +204,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/2/attestations/scientific-manuscript")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${NODES_URL}/dpid/46/2/attestations/scientific-manuscript`;
@@ -213,7 +223,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/v1?raw")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${IPFS_URL}/bafkreibghlpnl7d7wpn6r3a32b5z6f5cjxdz7b4wxgowkbfwqoazvlk2ui`;
@@ -231,7 +241,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46?raw")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${IPFS_URL}/bafkreic6t6lf3loxvbwrqpb66mzqfuwfcv2ks6k7wgxaefxkh7i5a6x7ua`;
@@ -256,7 +266,7 @@ describe("dPID resolution", { timeout: 5_000 }, function () {
             await supertest(app)
                 .get("/46/v1/root/.nodeKeep?raw")
                 .expect(302)
-                .then((res: Response) => {
+                .then((res: TestResponse) => {
                     const value = res.header["location"];
 
                     const expected = `${IPFS_URL}/bafybeieo5thng4grq5aujudqtagximd2k5ucs6ale6pxoecr64pqnrxuhe/.nodeKeep`;
