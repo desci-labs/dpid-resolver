@@ -80,7 +80,16 @@ export const resolveGenericHandler = async (
         });
     }
 
-    const isRaw = query.raw !== undefined || query.format === "raw";
+    // Smart format detection to avoid CORS issues while preserving human-readable redirects
+    // Default to raw for API requests (to prevent CORS), but redirect browsers to Nodes
+    const acceptHeader = req.headers.accept || "";
+    const isApiRequest = acceptHeader.includes("application/json") && !acceptHeader.includes("text/html");
+
+    const isRaw =
+        query.raw !== undefined ||
+        query.format === "raw" ||
+        (query.format === undefined && isApiRequest) ||
+        query.format === "json";
     const isJsonld = query.jsonld !== undefined || query.format === "jsonld";
     const isMyst = query.format === "myst";
 

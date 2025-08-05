@@ -6,23 +6,56 @@ const options: swaggerJsdoc.Options = {
         info: {
             title: "dPID Resolver API",
             version: "2.0.0",
-            description: `
-                An open-source HTTP resolver for dPIDs, bridging decentralized protocols to HTTP for scientific research artifact data.
+            description: `An open-source HTTP resolver for dPIDs, bridging decentralized protocols to HTTP for scientific research artifact data.
 
-                ## Overview
-                This API provides endpoints to resolve dPIDs (decentralized Persistent Identifiers) to their corresponding manifests and content.
+This API provides comprehensive endpoints to resolve dPIDs (decentralized Persistent Identifiers) to their corresponding manifests, content, and metadata. It powers both browse and detail page experiences for the decentralized research ecosystem.
 
-                ## Features
-                - Resolve dPIDs to manifests
-                - Query research objects and version history
-                - Support for multiple output formats (JSON, JSON-LD, MyST)
+## Key Use Cases
 
-                ## Authentication
-                This API is currently public and does not require authentication.
+### Browse Pages
+- **/api/v2/query/dpids** - Paginated lists of all research objects with optional metadata
+- **Filter & sort** - Find research by recency, metadata fields, version activity  
+- **Performance optimized** - Smart caching and optional metadata resolution
 
-                ## Rate Limiting
-                Please be mindful of API usage. Rate limits may be applied to prevent abuse.
-            `,
+### Detail Pages
+- **/api/v2/resolve/dpid/{id}** - Complete research object with full version history
+- **/api/v2/resolve/{path}** - Flexible access to specific files and versions
+- **Multi-format support** - JSON, raw IPFS, MyST, JSON-LD outputs
+
+### Direct Access
+- **User-friendly URLs** - Handle dpid.org/123 style links
+- **Version navigation** - Access any historical version (v1, v2, etc.)
+- **File-level access** - Direct links to papers, data, code within research objects
+
+## Features
+- **Fast Resolution**: Resolve dPIDs to manifests and content with sub-second response times
+- **Version History**: Complete chronological access to all research object versions
+- **Metadata Enrichment**: Optional IPFS manifest resolution for titles, authors, descriptions
+- **Flexible Formats**: JSON APIs, raw IPFS redirects, MyST Markdown, JSON-LD semantic data
+- **Pagination**: Efficient browsing through large research collections
+- **Smart Caching**: Redis-backed performance optimization
+- **Cross-Protocol**: Works with both Ceramic streams and legacy blockchain contracts
+
+## Common Integration Patterns
+
+**Research Discovery Platform:**
+GET /api/v2/query/dpids?metadata=true&fields=title,authors&size=20
+
+**Research Detail View:**
+GET /api/v2/resolve/dpid/123
+GET /api/v2/resolve/123/manuscript.pdf?format=raw
+
+**Analytics Dashboard:**
+GET /api/v2/query/dpids?history=true&size=100
+
+## Authentication
+This API is currently public and does not require authentication.
+
+## Rate Limiting
+Please be mindful of API usage. Rate limits may be applied to prevent abuse.
+
+## Support
+Questions? Check our GitHub Issues or contact support.`,
             contact: {
                 name: "API Support",
                 url: "https://github.com/desci-labs/dpid-resolver/issues",
@@ -35,27 +68,32 @@ const options: swaggerJsdoc.Options = {
         },
         servers: [
             {
-                url: "https://beta.dpid.org/api",
-                description: "Production API",
+                url: "/api",
+                description: "Current Host API",
+            },
+            {
+                url: "http://localhost:5461/api",
+                description: "Local Development Server",
             },
             {
                 url: "https://dev-beta.dpid.org/api",
                 description: "Development API",
             },
             {
-                url: "/api",
-                description: "Localhost base API",
+                url: "https://beta.dpid.org/api",
+                description: "Production API",
             },
         ],
         tags: [
             {
                 name: "Resolve",
                 description:
-                    "Endpoints for resolving individual research objects, by stream or dPID, to manifests and content",
+                    "**Individual research object resolution** - Perfect for detail pages, file access, and direct DPID links. Get complete research objects with full version history, specific files, or content in different formats (raw IPFS, MyST, JSON-LD).",
             },
             {
                 name: "Query",
-                description: "Endpoints for querying research objects and version histories",
+                description:
+                    "**Research discovery and browse functionality** - Ideal for browse pages, search, and analytics. Paginated lists of research objects with optional metadata resolution, version history, and filtering capabilities.",
             },
         ],
     },

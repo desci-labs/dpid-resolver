@@ -151,26 +151,38 @@ const STREAM_LOAD_OPTS = {
 const getKeyForCommit = (commit: streams.CommitID) => `resolver-${DPID_ENV}-commit-${commit.toString()}`;
 
 export const getCodexHistory = async (streamId: string): Promise<HistoryQueryResult> => {
+    const startTime = Date.now();
+
     if (flightClient) {
-        return await getStreamHistory(flightClient, streamId);
+        const result = await getStreamHistory(flightClient, streamId);
+        const totalTime = Date.now() - startTime;
+        logger.info({ streamId, totalTime, source: "flightClient" }, "getCodexHistory completed");
+        return result;
     }
 
     // Below is used as fallback if flightClient is not instantiated
     const ceramic = getCeramicClient();
+    const loadStreamStart = Date.now();
     const streamID = streams.StreamID.fromString(streamId);
     const stream = await ceramic.loadStream(streamID, STREAM_LOAD_OPTS);
+    const loadStreamTime = Date.now() - loadStreamStart;
+
     const commitIds = stream.state.log
         .filter(({ type }) => type !== 2)
         .map(({ cid }) => streams.CommitID.make(streamID, cid));
 
+    let cacheHits = 0;
+    let cacheMisses = 0;
     const versionPromises = commitIds.map(async (commit) => {
         const key = getKeyForCommit(commit);
         if (!redisService) {
+            cacheMisses++;
             return await getFreshVersionInfo(ceramic, commit);
         }
 
         const cached = await redisService.getFromCache<HistoryVersion>(key);
         if (cached !== null) {
+            cacheHits++;
             // Only refresh TTL if entry is anchored, otherwise we'll postpone refreshes
             if (cached.time) {
                 void redisService.keyBump(key, CACHE_TTL_ANCHORED).catch((error) => {
@@ -179,6 +191,7 @@ export const getCodexHistory = async (streamId: string): Promise<HistoryQueryRes
             }
             return cached;
         }
+        cacheMisses++;
         const fresh = await getFreshVersionInfo(ceramic, commit);
         const cacheTtl = fresh.time ? CACHE_TTL_ANCHORED : CACHE_TTL_PENDING;
         void redisService.setToCache(key, fresh, cacheTtl).catch((error) => {
@@ -188,6 +201,20 @@ export const getCodexHistory = async (streamId: string): Promise<HistoryQueryRes
     });
 
     const versions = await Promise.all(versionPromises);
+    const totalTime = Date.now() - startTime;
+
+    logger.info(
+        {
+            streamId,
+            totalTime,
+            loadStreamTime,
+            commitCount: commitIds.length,
+            cacheHits,
+            cacheMisses,
+            source: "ceramic",
+        },
+        "getCodexHistory timing breakdown",
+    );
 
     return {
         id: streamId,

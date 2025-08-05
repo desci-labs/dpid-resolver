@@ -9,6 +9,12 @@ const logger = parentLogger.child({
 export function shouldStartRedis(): boolean {
     const host = process.env.REDIS_HOST;
     const port = process.env.REDIS_PORT;
+    const isRedisEnabled = process.env.REDIS_ENABLED !== "false"; // Allow disabling Redis
+
+    if (!isRedisEnabled) {
+        logger.info({ fn: "shouldStartRedis" }, "Redis is disabled via REDIS_ENABLED=false");
+        return false;
+    }
 
     if (!host || !port) {
         logger.warn({ host, port }, "Redis host or port is not defined, Redis service will not start");
