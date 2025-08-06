@@ -97,7 +97,13 @@ Questions? Check our GitHub Issues or contact support.`,
             },
         ],
     },
-    apis: ["./src/api/**/*.ts"], // Path to the API docs
+    apis: [
+        // In development, read from TypeScript source files
+        // In production, read from compiled JavaScript files under dist/src
+        process.env.NODE_ENV === "production" || __dirname.includes("dist")
+            ? "./dist/src/api/**/*.js"
+            : "./src/api/**/*.ts",
+    ], // Path to the API docs
 };
 
 export const specs = swaggerJsdoc(options);
