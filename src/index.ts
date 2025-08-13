@@ -47,12 +47,23 @@ app.use(function (_req, res, next) {
 });
 
 // Serve the OpenAPI JSON and the interactive API docs
-app.get("/api-docs.json", (_req, res) => res.json(specs));
+app.get("/api-docs.json", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.json(specs);
+});
+app.use("/api-docs", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    next();
+});
 app.use(
     "/api-docs",
     swaggerUi.serve,
     swaggerUi.setup(undefined, {
-        swaggerUrl: "/api-docs.json",
+        swaggerUrl: "/api-docs.json?v=2",
         swaggerOptions: {
             displayOperationId: false,
         },
