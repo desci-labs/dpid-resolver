@@ -1,9 +1,13 @@
 import swaggerJsdoc from "swagger-jsdoc";
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { fileURLToPath } from "url";
+import { dirname, join, resolve } from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+const isDistBuild = process.env.NODE_ENV === "production" || __dirname.includes("dist");
+const projectRoot = resolve(__dirname, "..");
+const apisGlob = isDistBuild ? join(projectRoot, "dist/src/api/**/*.js") : join(projectRoot, "src/api/**/*.ts");
 
 const options: swaggerJsdoc.Options = {
     definition: {
@@ -102,13 +106,7 @@ Questions? Check our GitHub Issues or contact support.`,
             },
         ],
     },
-    apis: [
-        // In development, read from TypeScript source files
-        // In production, read from compiled JavaScript files under dist/src
-        process.env.NODE_ENV === "production" || __dirname.includes("dist")
-            ? "./dist/src/api/**/*.js"
-            : "./src/api/**/*.ts",
-    ], // Path to the API docs
+    apis: [apisGlob], // Path to the API docs
 };
 
 export const specs = swaggerJsdoc(options);

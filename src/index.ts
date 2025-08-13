@@ -46,8 +46,18 @@ app.use(function (_req, res, next) {
     next();
 });
 
-// Serve the interactive API docs
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
+// Serve the OpenAPI JSON and the interactive API docs
+app.get("/api-docs.json", (_req, res) => res.json(specs));
+app.use(
+    "/api-docs",
+    swaggerUi.serve,
+    swaggerUi.setup(undefined, {
+        swaggerUrl: "/api-docs.json",
+        swaggerOptions: {
+            displayOperationId: false,
+        },
+    }),
+);
 
 app.use("/api", api);
 
