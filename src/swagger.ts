@@ -7,7 +7,7 @@ const __dirname = dirname(__filename);
 
 const isDistBuild = process.env.NODE_ENV === "production" || __dirname.includes("dist");
 const projectRoot = resolve(__dirname, "..");
-const apisGlob = isDistBuild ? join(projectRoot, "dist/src/api/**/*.js") : join(projectRoot, "src/api/**/*.ts");
+const apisGlob = isDistBuild ? join(__dirname, "api/**/*.js") : join(projectRoot, "src/api/**/*.ts");
 
 const options: swaggerJsdoc.Options = {
     definition: {
