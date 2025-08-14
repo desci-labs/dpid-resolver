@@ -2,6 +2,11 @@ import type { Request, Response } from "express";
 import parentLogger, { serializeError } from "../../../logger.js";
 import { pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
 import { getCodexHistory, type HistoryQueryResult } from "../queries/history.js";
+import { IPFS_GATEWAY } from "../../../util/config.js";
+import { MystTransformer, RoCrateTransformer } from "@desci-labs/desci-models";
+import { getStreamHistory } from "@desci-labs/desci-codex-lib/c1/resolve";
+import { cleanupEip155Address } from "../../../util/conversions.js";
+import { flightClient } from "../../../flight.js";
 
 const CERAMIC_URL = process.env.CERAMIC_URL;
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
@@ -16,8 +21,17 @@ export type ResolveCodexParams = {
     versionIx?: number;
 };
 
+export type ResolveCodexQueryParams = {
+    /** @deprecated use format instead */
+    raw?: "";
+    /** @deprecated use format instead */
+    jsonld?: "";
+    format?: "jsonld" | "json" | "raw" | "myst";
+};
+
 export type ResolveCodexResponse =
     | HistoryQueryResult
+    | string // RO-Crate if ?jsonLd query param is present
     | {
           error: string;
           details: unknown;
@@ -33,12 +47,24 @@ export type ResolveCodexResponse =
  * @throws if id is an invalid stream or commit ID
  */
 export const resolveCodexHandler = async (
-    req: Request<ResolveCodexParams>,
+    req: Request<ResolveCodexParams, unknown, undefined, ResolveCodexQueryParams>,
     res: Response<ResolveCodexResponse>,
-): Promise<typeof res> => {
+): Promise<typeof res | void> => {
     logger.info({ ...req.params }, `resolving codex entity with ${CERAMIC_URL}`);
 
-    const { streamOrCommitId, versionIx } = req.params;
+    const { streamOrCommitId } = req.params;
+    const versionIx = req.params.versionIx !== undefined ? Number(req.params.versionIx) : undefined;
+    if (Number.isNaN(versionIx)) {
+        return res.status(400).send({
+            error: "versionIx must be a number",
+            details: `versionIx is ${req.params.versionIx} of type ${typeof req.params.versionIx}`,
+            params: req.params,
+            path: MODULE_PATH,
+        });
+    }
+    const wantRaw = req.query.raw !== undefined || req.query.format === "raw";
+    const wantJsonLd = req.query.jsonld !== undefined || req.query.format === "jsonld";
+    const wantMyst = req.query.format === "myst";
 
     let codexPid: PID;
     try {
@@ -92,14 +118,43 @@ export const resolveCodexHandler = async (
         result.manifest = commitVersion.manifest;
     }
 
-    return res.status(200).send(result);
+    const manifestUrl = `${IPFS_GATEWAY}/${result.manifest}`;
+    if (wantRaw) {
+        return res.redirect(manifestUrl);
+    } else if (wantJsonLd) {
+        const transformer = new RoCrateTransformer();
+        const response = await fetch(manifestUrl);
+        if (!response.ok) {
+            return res.status(500).send({
+                error: "Could not resolve manifest",
+                details: `Couldn't find manifest ${result.manifest} for RO-Crate transform`,
+                params: req.params,
+                path: MODULE_PATH,
+            });
+        }
+        const roCrate = transformer.exportObject(await response.json());
+        return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
+    } else if (wantMyst) {
+        const transformer = new MystTransformer();
+        const response = await fetch(manifestUrl);
+        const mystOutput = transformer.exportObject(await response.json());
+        return res.setHeader("Content-Type", "text/myst").send(mystOutput);
+    } else {
+        return res.status(200).send(result);
+    }
 };
 
 /** Resolve full stream history */
 export const resolveCodex = async (streamId: string, versionIx?: number): Promise<HistoryQueryResult> => {
-    const history = await getCodexHistory(streamId);
+    let history;
+    if (flightClient) {
+        history = await getStreamHistory(flightClient, streamId);
+        history.owner = cleanupEip155Address(history.owner);
+    } else {
+        history = await getCodexHistory(streamId);
+    }
 
-    if (versionIx !== undefined && versionIx > history.versions.length) {
+    if (versionIx !== undefined && versionIx > history.versions.length - 1) {
         throw new Error("versionIx out of bounds");
     }
 

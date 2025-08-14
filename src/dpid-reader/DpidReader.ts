@@ -13,6 +13,7 @@ import { CID } from "multiformats/cid";
 import axios from "axios";
 import {
     type DataBucketComponent,
+    MystTransformer,
     type ResearchObjectV1,
     type ResearchObjectV1Component,
     RoCrateTransformer,
@@ -25,9 +26,12 @@ export interface DpidRequest {
     version?: string;
     suffix?: string;
     prefix: string;
+    /** @deprecated use format instead */
     raw?: boolean;
+    /** @deprecated use format instead */
     jsonld?: boolean;
     domain?: string;
+    format?: "jsonld" | "json" | "raw" | "myst";
 }
 
 const RPC_URL = "https://eth-sepolia.g.alchemy.com/v2/Dg4eT90opKOFZ7w-YCxVwX9O-sriKn0N";
@@ -240,10 +244,8 @@ export class DpidReader {
                     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                     (dataSuffix!.length > 0 ? CID_MAP[dataBucket.payload.cid] : defaultGateway) || defaultGateway;
                 const dagTestURl = `${selectedGateway.replace(/\/ipfs$/, "")}/api/v0/dag/get?arg=${arg}`;
-                console.log(dagTestURl, "dagTestURl");
                 try {
                     const { data } = await axios({ method: "POST", url: dagTestURl });
-                    console.log("posted");
                     if (!data.Data || data.Data["/"].bytes !== "CAE") {
                         return `${selectedGateway}/${arg}`;
                     } else {
@@ -275,6 +277,14 @@ export class DpidReader {
         return JSON.stringify(roCrate);
     };
 
+    private static transformMyst = async (result: DpidResult, request: DpidRequest) => {
+        const rawRes = (await this.transformRaw(result, request)) as string;
+        const resJson = await axios.get(rawRes);
+        const transformer = new MystTransformer();
+        const mystOutput = transformer.exportObject(resJson.data);
+        return mystOutput;
+    };
+
     static transform = async (result: DpidResult, request: DpidRequest) => {
         if (request.jsonld) {
             logger.info({ request }, "[DpidReader::transform] jsonld");
@@ -283,6 +293,10 @@ export class DpidReader {
         if (request.raw) {
             logger.info({ request }, "[DpidReader::transform] raw");
             return DpidReader.transformRaw(result, request);
+        }
+        if (request.format === "myst") {
+            logger.info({ request }, "[DpidReader::transform] myst");
+            return DpidReader.transformMyst(result, request);
         }
         logger.info({ request }, "[DpidReader::transform] web");
         return DpidReader.transformWeb(result, request);
