@@ -134,7 +134,15 @@ const getCodexHistories = async (streamIds: string[]): Promise<HistoryQueryResul
     if (streamIds.length === 0) return [];
 
     if (flightClient) {
-        return await getStreamHistoryMultiple(flightClient, streamIds);
+        try {
+            return await getStreamHistoryMultiple(flightClient, streamIds);
+        } catch (error) {
+            logger.warn(
+                { error: serializeError(error as Error), streamIds },
+                "flightClient multiple history lookup failed; falling back to ceramic",
+            );
+            // Fall through to Ceramic-based fallback below
+        }
     }
 
     const historyPromises = streamIds.map((id) => getCodexHistory(id));
@@ -154,10 +162,18 @@ export const getCodexHistory = async (streamId: string): Promise<HistoryQueryRes
     const startTime = Date.now();
 
     if (flightClient) {
-        const result = await getStreamHistory(flightClient, streamId);
-        const totalTime = Date.now() - startTime;
-        logger.info({ streamId, totalTime, source: "flightClient" }, "getCodexHistory completed");
-        return result;
+        try {
+            const result = await getStreamHistory(flightClient, streamId);
+            const totalTime = Date.now() - startTime;
+            logger.info({ streamId, totalTime, source: "flightClient" }, "getCodexHistory completed");
+            return result;
+        } catch (error) {
+            logger.warn(
+                { streamId, error: serializeError(error as Error) },
+                "flightClient history lookup failed; falling back to ceramic",
+            );
+            // Fall through to Ceramic-based fallback below
+        }
     }
 
     // Below is used as fallback if flightClient is not instantiated
