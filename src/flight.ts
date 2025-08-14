@@ -17,6 +17,7 @@ interface FlightSqlClient {
 export let flightClient: FlightSqlClient | undefined;
 
 export async function maybeInitializeFlightClient(): Promise<void> {
+    logger.info({ CERAMIC_FLIGHT_URL }, "CERAMIC_FLIGHT_URL");
     if (CERAMIC_FLIGHT_URL) {
         try {
             // Dynamic import to avoid issues in test environment
