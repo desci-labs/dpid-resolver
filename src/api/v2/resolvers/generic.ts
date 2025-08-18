@@ -1,10 +1,11 @@
 import type { Request, Response } from "express";
 import axios from "axios";
-import { RoCrateTransformer, type ResearchObjectV1, MystTransformer } from "@desci-labs/desci-models";
+import { RoCrateTransformer, type ResearchObjectV1 } from "@desci-labs/desci-models";
 
 import parentLogger, { serializeError } from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
 import { IPFS_GATEWAY, getNodesUrl } from "../../../util/config.js";
+import { buildMystPageFromManifest } from "../../../util/myst.js";
 import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
 import { isDpid, isVersionString } from "../../../util/validation.js";
@@ -137,14 +138,21 @@ export const resolveGenericHandler = async (
         const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
 
         const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
-
         const response = await fetch(manifestUrl);
+        if (!response.ok) {
+            return res.status(500).send({ error: "Could not fetch manifest", manifest: resolveResult.manifest });
+        }
 
-        const transformer = new MystTransformer();
+        const manifest = (await response.json()) as ResearchObjectV1;
 
-        const mystOutput = transformer.exportObject(JSON.parse(await response.text()));
+        const page = await buildMystPageFromManifest({
+            manifest,
+            dpid: parseInt(dpid),
+            history: resolveResult,
+            version: versionIx,
+        });
 
-        return res.setHeader("Content-Type", "text/myst").send(mystOutput);
+        return res.setHeader("Content-Type", "application/json").send(JSON.stringify(page));
     }
 
     analytics.log({

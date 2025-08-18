@@ -3,7 +3,7 @@ import parentLogger, { serializeError } from "../../../logger.js";
 import { pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
 import { getCodexHistory, type HistoryQueryResult } from "../queries/history.js";
 import { IPFS_GATEWAY } from "../../../util/config.js";
-import { MystTransformer, RoCrateTransformer } from "@desci-labs/desci-models";
+import { RoCrateTransformer, type ResearchObjectV1 } from "@desci-labs/desci-models";
 import { getStreamHistory } from "@desci-labs/desci-codex-lib/c1/resolve";
 import { cleanupEip155Address } from "../../../util/conversions.js";
 import { flightClient } from "../../../flight.js";
@@ -135,10 +135,63 @@ export const resolveCodexHandler = async (
         const roCrate = transformer.exportObject(await response.json());
         return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
     } else if (wantMyst) {
-        const transformer = new MystTransformer();
         const response = await fetch(manifestUrl);
-        const mystOutput = transformer.exportObject(await response.json());
-        return res.setHeader("Content-Type", "text/myst").send(mystOutput);
+        if (!response.ok) {
+            return res.status(500).send({
+                error: "Could not resolve manifest",
+                details: `Couldn't find manifest ${result.manifest} for MyST transform`,
+                params: req.params,
+                path: MODULE_PATH,
+            });
+        }
+        const manifest = (await response.json()) as ResearchObjectV1;
+        // We do not know IJ id here; just set slug to stream id string fallback
+        const page: {
+            version: number;
+            kind: string;
+            sha256: string;
+            slug: string;
+            location: string;
+            dependencies: unknown[];
+            frontmatter: {
+                title?: string;
+                abstract?: string;
+                license?: string;
+                keywords?: string[];
+                tags?: string[];
+                authors?: Array<{
+                    name: string;
+                    roles?: string[];
+                    orcid?: string;
+                    institutions?: string[];
+                }>;
+            };
+            mdast: { type: string };
+            references: Array<{ type?: string; id?: string; title?: string }>;
+        } = {
+            version: 2,
+            kind: "Article",
+            sha256: "",
+            slug: streamOrCommitId,
+            location: "",
+            dependencies: [],
+            frontmatter: {
+                title: manifest.title,
+                abstract: manifest.description,
+                license: manifest.defaultLicense,
+                keywords: manifest.keywords,
+                tags: manifest.tags?.map((t) => t.name),
+                authors: manifest.authors?.map((a) => ({
+                    name: a.name,
+                    roles: Array.isArray(a.role) ? (a.role as string[]) : [a.role as string],
+                    orcid: a.orcid,
+                    institutions: a.organizations?.map((o) => o.name),
+                })),
+            },
+            mdast: { type: "root" },
+            references: manifest.references?.map((r) => ({ type: r.type, id: r.id, title: r.title })) ?? [],
+        };
+        return res.setHeader("Content-Type", "application/json").send(JSON.stringify(page));
     } else {
         return res.status(200).send(result);
     }
