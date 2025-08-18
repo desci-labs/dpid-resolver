@@ -149,6 +149,7 @@ export const resolveGenericHandler = async (
             manifest,
             dpid: parseInt(dpid),
             history: resolveResult,
+            version: versionIx,
         });
 
         return res.setHeader("Content-Type", "application/json").send(JSON.stringify(page));

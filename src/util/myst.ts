@@ -10,8 +10,9 @@ export async function buildMystPageFromManifest(params: {
     dpid: number;
     history?: HistoryQueryResult;
     ijMetadata?: Record<string, unknown> | null;
+    version?: number;
 }): Promise<Record<string, unknown>> {
-    const { manifest, dpid, history, ijMetadata } = params;
+    const { manifest, dpid, history, ijMetadata, version } = params;
 
     const title = manifest.title ?? undefined;
     const abstract = manifest.description ?? undefined;
@@ -102,9 +103,11 @@ export async function buildMystPageFromManifest(params: {
         ? new Date(Math.min(...history.versions.map((v) => (v.time ?? 0) * 1000))).toISOString()
         : undefined;
 
+    console.log({ version });
+
     // MyST Page fields
     const page = {
-        version: 2,
+        version: version !== undefined && !isNaN(version) && version > -1 ? version + 1 : revisionCids?.length ?? 0,
         kind: "Article",
         sha256: "",
         slug: String(ijPubId ?? dpid),
