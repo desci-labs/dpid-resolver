@@ -7,7 +7,10 @@ const __dirname = dirname(__filename);
 
 const isDistBuild = process.env.NODE_ENV === "production" || __dirname.includes("dist");
 const projectRoot = resolve(__dirname, "..");
-const apisGlob = isDistBuild ? join(__dirname, "api/**/*.js") : join(projectRoot, "src/api/**/*.ts");
+// In dev, we scan TS sources. In prod, depending on build output, routes may be under dist/api or dist/src/api
+const apisGlobs: string[] = isDistBuild
+    ? [join(__dirname, "api/**/*.js"), join(__dirname, "src/api/**/*.js")]
+    : [join(projectRoot, "src/api/**/*.ts")];
 
 const options: swaggerJsdoc.Options = {
     definition: {
@@ -104,9 +107,14 @@ Questions? Check our GitHub Issues or contact support.`,
                 description:
                     "**Research discovery and browse functionality** - Ideal for browse pages, search, and analytics. Paginated lists of research objects with optional metadata resolution, version history, and filtering capabilities.",
             },
+            {
+                name: "Data",
+                description:
+                    "**Data utilities** - IPFS-related utilities like folder tree listing by dPID or CID. Useful for directory browsing UIs and content explorers.",
+            },
         ],
     },
-    apis: [apisGlob], // Path to the API docs
+    apis: apisGlobs, // Paths to the API docs
 };
 
 export const specs = swaggerJsdoc(options);

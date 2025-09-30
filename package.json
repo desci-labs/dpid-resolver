@@ -15,7 +15,7 @@
     "scripts": {
         "build": "tsc",
         "watch": "tsc --watch",
-        "start": "node dist/index.js",
+        "start": "node dist/src/index.js",
         "test": "PINO_LOG_LEVEL=silent PORT=5600 vitest --config vitest.config.ts",
         "dev": "tsx --watch --inspect --inspect-port=9309 src/index.ts",
         "prettier-format": "prettier --config .prettierrc 'src/**/*.ts' --write",
