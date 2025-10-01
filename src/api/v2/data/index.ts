@@ -115,7 +115,7 @@ router.get(
             });
             const responsePayload =
                 parsedDepth === undefined
-                    ? { depth: 1, note: "call with ?depth=full to get full direcrtory structure (may be slow)", tree }
+                    ? { depth: 1, note: "call with ?depth=full to get full directory structure (may be slow)", tree }
                     : tree;
 
             void analytics.log({
@@ -214,7 +214,7 @@ router.get(
             });
             const responsePayload =
                 parsedDepth === undefined
-                    ? { depth: 1, note: "call with ?depth=full to get full direcrtory structure (may be slow)", tree }
+                    ? { depth: 1, note: "call with ?depth=full to get full directory structure (may be slow)", tree }
                     : tree;
 
             void analytics.log({

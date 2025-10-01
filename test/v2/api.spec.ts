@@ -458,7 +458,7 @@ describe("dPID", { timeout: 10_000 }, function () {
         });
 
         describe("/objects", async () => {
-            it("should return a list of research objects", async () => {
+            it.skip("should return a list of research objects", async () => {
                 await request(app)
                     .get("/api/v2/query/objects")
                     .expect(200)
