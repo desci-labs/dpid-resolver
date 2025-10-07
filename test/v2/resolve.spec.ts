@@ -1,18 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createRequire } from "module";
 import { app } from "../../src/index.js";
+import type { TestResponse } from "../testUtils.js";
 
 // Use createRequire to import CommonJS supertest in ESM environment
 const require = createRequire(import.meta.url);
 const request = require("supertest");
-
-// Simple interface for supertest response
-interface TestResponse {
-    header: Record<string, string>;
-    status: number;
-    body: unknown;
-    [key: string]: unknown;
-}
 
 describe("/api/v2/resolve", { timeout: 10_000 }, () => {
     describe("/dpid", async () => {

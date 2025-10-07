@@ -2,18 +2,11 @@ import { describe, it } from "vitest";
 import { createRequire } from "module";
 import assert from "assert";
 import { app } from "../../src/index.js";
+import type { TestResponse } from "../testUtils.js";
 
 // Use createRequire to import CommonJS supertest in ESM environment
 const require = createRequire(import.meta.url);
 const request = require("supertest");
-
-// Simple interface for supertest response
-interface TestResponse {
-    header: Record<string, string>;
-    status: number;
-    body: unknown;
-    [key: string]: unknown;
-}
 
 const NODES_URL = "https://nodes-dev.desci.com";
 const IPFS_URL = "https://ipfs.desci.com/ipfs";
