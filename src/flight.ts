@@ -21,7 +21,7 @@ export async function maybeInitializeFlightClient(): Promise<void> {
     if (CERAMIC_FLIGHT_URL) {
         try {
             // Dynamic import to avoid issues in test environment
-            const { newFlightSqlClient } = await import("@desci-labs/desci-codex-lib/c1/clients");
+            const { newFlightSqlClient } = await import("@desci-labs/desci-codex-lib/c1/flightclient");
             flightClient = await newFlightSqlClient(CERAMIC_FLIGHT_URL);
         } catch (error) {
             logger.warn({ error }, "Failed to initialize Flight client, falling back to Ceramic");
