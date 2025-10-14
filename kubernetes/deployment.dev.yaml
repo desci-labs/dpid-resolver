@@ -36,7 +36,10 @@ spec:
                   name: dpid-resolver-dev
                   command: ["/bin/bash", "-c"]
                   args:
-                      - echo "SOURCING ENV"; source /vault/secrets/config; dumb-init node ./dist/index.js;
+                      - dumb-init node --import dist/instrument.mjs dist/index.js;
+                  env:
+                    - name: BASH_ENV
+                      value: /vault/secrets/config
                   ports:
                       - containerPort: 5460
                   resources:
