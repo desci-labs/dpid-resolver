@@ -130,9 +130,7 @@ router.get(
                 { error: serializeError(error as Error), dpid, versionIx },
                 "failed to build folder tree by dpid",
             );
-            return res
-                .status(500)
-                .send({ error: "failed to build folder tree by dpid", details: serializeError(error as Error) });
+            return res.status(500).send({ error: "failed to build folder tree by dpid" });
         }
     },
 );
@@ -226,8 +224,18 @@ router.get(
         const { depth, concurrency } = req.query;
 
         // Extract the path after /dpid/{dpid}/
-        const fullPath = req.params["0"]; // Express stores wildcard in params[0]
-        const pathParts = fullPath.split("/").filter((p) => p.length > 0);
+        const fullPath = req.params["0"];
+        if (!fullPath) {
+            return res.status(400).send({ error: "path is required after dpid" });
+        }
+
+        // Split and filter the path, removing empty segments
+        let pathParts = fullPath.split("/").filter((p) => p.length > 0);
+
+        // Strip leading "root" if present since the tree root is already named "root"
+        if (pathParts.length > 0 && pathParts[0] === "root") {
+            pathParts = pathParts.slice(1);
+        }
 
         if (!isDpid(dpid)) {
             return res.status(400).send({ error: `invalid dpid: '${dpid}'` });
@@ -238,12 +246,18 @@ router.get(
             if (depth === "full") {
                 parsedDepth = "full";
             } else {
-                const d = parseInt(depth);
-                if (!isNaN(d) && d >= 0) parsedDepth = d;
+                const d = parseInt(depth, 10);
+                if (!Number.isNaN(d) && d >= 0) parsedDepth = d;
             }
         }
 
-        const conc = concurrency ? Math.max(1, Math.min(parseInt(concurrency), 16)) : undefined;
+        let conc: number | undefined = undefined;
+        if (concurrency) {
+            const parsed = parseInt(concurrency, 10);
+            if (!Number.isNaN(parsed)) {
+                conc = Math.max(1, Math.min(parsed, 16));
+            }
+        }
 
         try {
             const dpidNum = parseInt(dpid);
@@ -289,9 +303,7 @@ router.get(
                 { error: serializeError(error as Error), dpid, path: fullPath },
                 "failed to navigate to path in dpid",
             );
-            return res
-                .status(500)
-                .send({ error: "failed to navigate to path", details: serializeError(error as Error) });
+            return res.status(500).send({ error: "failed to navigate to path" });
         }
     },
 );
@@ -337,9 +349,7 @@ router.get(
             return res.status(200).send(responsePayload);
         } catch (error) {
             logger.error({ error: serializeError(error as Error), cid }, "failed to build folder tree by cid");
-            return res
-                .status(500)
-                .send({ error: "failed to build folder tree by cid", details: serializeError(error as Error) });
+            return res.status(500).send({ error: "failed to build folder tree by cid" });
         }
     },
 );
