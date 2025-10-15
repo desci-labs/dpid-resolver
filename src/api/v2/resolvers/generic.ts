@@ -168,7 +168,10 @@ export const resolveGenericHandler = async (
             const tempMetadata = (await ipfsCat(`${dataBucket.cid}/insight-journal-metadata.json`)) as unknown as {
                 license: string;
                 publication_id: number;
-                revisions: Array<{ citation_list: Array<{ type?: string; id?: string; title?: string }> }>;
+                revisions: Array<{
+                    citation_list: Array<{ type?: string; id?: string; title?: string }>;
+                    doi?: string;
+                }>;
                 date_submitted: string;
                 submitted_by_author: {
                     author_email: string;
@@ -190,6 +193,7 @@ export const resolveGenericHandler = async (
                 },
                 thumbnail: cover ? `https://pub.desci.com/ipfs/${cover}` : undefined,
                 flatFiles: flattenIpfsFolder(ipfsFolder).filter((f) => f.type === "file"),
+                doi: tempMetadata.revisions?.[0]?.doi,
             };
         } catch (e) {
             logger.error(e, "Error fetching ij metadata");

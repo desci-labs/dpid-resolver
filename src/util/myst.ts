@@ -1,4 +1,4 @@
-import type { ResearchObjectV1, ResearchObjectV1Author, ResearchObjectReference } from "@desci-labs/desci-models";
+import type { ResearchObjectV1, ResearchObjectV1Author } from "@desci-labs/desci-models";
 import type { HistoryQueryResult } from "../api/v2/queries/history.js";
 import type { EnhancedIpfsEntry } from "../api/v2/data/getIpfsFolder.js";
 
@@ -17,6 +17,7 @@ export type IJMetadata = {
     thumbnailOptimized?: string;
     source_code_git_url?: string;
     code_url?: string;
+    doi?: string;
     reviews?: Array<{
         reviewer_name?: string;
         name?: string;
@@ -72,12 +73,12 @@ export async function buildMystPageFromManifest(params: {
     });
 
     // References from manifest (minimal)
-    const referencesFromManifest: Array<{ type?: string; id?: string; title?: string }> =
-        (manifest.references as ResearchObjectReference[] | undefined)?.map((r) => ({
-            type: r.type,
-            id: r.id,
-            title: r.title,
-        })) ?? [];
+    // const referencesFromManifest: Array<{ type?: string; id?: string; title?: string }> =
+    //     (manifest.references as ResearchObjectReference[] | undefined)?.map((r) => ({
+    //         type: r.type,
+    //         id: r.id,
+    //         title: r.title,
+    //     })) ?? [];
 
     // Pull optional IJ metadata, if available (typed access helpers)
     const ij = (ijMetadata ?? {}) as IJMetadata;
@@ -143,7 +144,7 @@ export async function buildMystPageFromManifest(params: {
         slug: String(ijPubId ?? dpid),
         location: "",
         dependencies: [] as unknown[],
-        doi: referencesFromManifest.find((r) => r.type === "doi")?.id ?? undefined,
+        doi: ij.doi ?? undefined,
         thumbnail: ijMetadata?.thumbnail ?? undefined,
         frontmatter: {
             // Typical MyST/Sphinx-like fields
