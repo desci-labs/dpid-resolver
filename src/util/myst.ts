@@ -35,6 +35,9 @@ export type IJMetadata = {
         type?: string;
         id?: string;
         title?: string;
+        key?: string;
+        doi?: string;
+        unstructured?: string;
     }>;
 };
 
@@ -117,7 +120,7 @@ export async function buildMystPageFromManifest(params: {
         ? new Date(Math.min(...history.versions.map((v) => (v.time ?? 0) * 1000))).toISOString()
         : undefined;
 
-    console.log({ version });
+    // version is included in the page object below
 
     // let DPID_URL = "";
     // switch (process.env.DPID_ENV) {
@@ -135,6 +138,22 @@ export async function buildMystPageFromManifest(params: {
     //         DPID_URL = "https://dpid.org";
     //         break;
     // }
+
+    // Build references data map keyed by citation key
+    const referencesData: Record<string, { label?: string; enumerator: string; url?: string; html?: string }> =
+        Object.fromEntries(
+            (ij.citation_list ?? [])
+                .filter((c): c is { key: string; doi?: string; unstructured?: string } => Boolean(c?.key))
+                .map((c, index) => [
+                    String(c.key),
+                    {
+                        label: c.key,
+                        enumerator: `${index + 1}`,
+                        url: c.doi ? `https://doi.org/${c.doi}` : undefined,
+                        html: c.unstructured,
+                    },
+                ]),
+        );
 
     // MyST Page fields
     const page = {
@@ -179,6 +198,12 @@ export async function buildMystPageFromManifest(params: {
                 type: f.type,
             },
         })),
+        references: {
+            cite: {
+                order: ij.citation_list?.map((c) => c.key) ?? [],
+            },
+            data: referencesData,
+        },
     };
 
     return page;
