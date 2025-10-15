@@ -5,10 +5,11 @@ import { RoCrateTransformer, type ResearchObjectV1 } from "@desci-labs/desci-mod
 import parentLogger, { serializeError } from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
 import { IPFS_GATEWAY, getNodesUrl } from "../../../util/config.js";
-import { buildMystPageFromManifest } from "../../../util/myst.js";
+import { buildMystPageFromManifest, type IJMetadata } from "../../../util/myst.js";
 import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
 import { isDpid, isVersionString } from "../../../util/validation.js";
+import { getIpfsFolderTreeByCid, ipfsCat, type EnhancedIpfsEntry } from "../data/getIpfsFolder.js";
 
 const MODULE_PATH = "/api/v2/resolvers/generic" as const;
 
@@ -45,6 +46,10 @@ export type SuccessResponse =
     | unknown; // in case of directly returning an UnixFS data node
 
 export type ResolveGenericResponse = SuccessResponse | ErrorResponse;
+
+const flattenIpfsFolder = (ipfsFolder: EnhancedIpfsEntry): Array<EnhancedIpfsEntry> => {
+    return ipfsFolder.children?.flatMap((child: EnhancedIpfsEntry) => [child, ...flattenIpfsFolder(child)]) ?? [];
+};
 
 /**
  * Resolve a dPID path. Will redirect to Nodes as viewer,
@@ -145,11 +150,57 @@ export const resolveGenericHandler = async (
 
         const manifest = (await response.json()) as ResearchObjectV1;
 
+        const dataBucket = manifest.components[0].payload;
+        if (!dataBucket) {
+            return res
+                .status(500)
+                .send({ error: "Could not find data bucket in manifest", manifest: resolveResult.manifest });
+        }
+
+        const ipfsFolder = await getIpfsFolderTreeByCid(dataBucket.cid, {
+            rootName: "root",
+            concurrency: 8,
+            depth: "full",
+        });
+
+        let ijMetadata: IJMetadata | undefined;
+        try {
+            const tempMetadata = (await ipfsCat(`${dataBucket.cid}/insight-journal-metadata.json`)) as unknown as {
+                license: string;
+                publication_id: number;
+                revisions: Array<{ citation_list: Array<{ type?: string; id?: string; title?: string }> }>;
+                date_submitted: string;
+                submitted_by_author: {
+                    author_email: string;
+                    author_institution: string;
+                };
+            };
+            logger.info({ ipfsFolder }, "Temp metadata");
+
+            const cover = (manifest.coverImage as string | undefined) ?? undefined;
+            ijMetadata = {
+                license_text: tempMetadata.license,
+                id: tempMetadata.publication_id,
+                citation_list: tempMetadata.revisions[0]?.citation_list,
+                date_submitted: tempMetadata.date_submitted,
+                corresponding_author: tempMetadata.submitted_by_author?.author_email,
+                affiliations: {
+                    [tempMetadata.submitted_by_author?.author_email]:
+                        tempMetadata.submitted_by_author?.author_institution,
+                },
+                thumbnail: cover ? `https://pub.desci.com/ipfs/${cover}` : undefined,
+                flatFiles: flattenIpfsFolder(ipfsFolder).filter((f) => f.type === "file"),
+            };
+        } catch (e) {
+            logger.error(e, "Error fetching ij metadata");
+        }
+
         const page = await buildMystPageFromManifest({
             manifest,
             dpid: parseInt(dpid),
             history: resolveResult,
             version: versionIx,
+            ijMetadata,
         });
 
         return res.setHeader("Content-Type", "application/json").send(JSON.stringify(page));

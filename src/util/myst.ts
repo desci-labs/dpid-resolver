@@ -1,5 +1,41 @@
 import type { ResearchObjectV1, ResearchObjectV1Author, ResearchObjectReference } from "@desci-labs/desci-models";
 import type { HistoryQueryResult } from "../api/v2/queries/history.js";
+import type { EnhancedIpfsEntry } from "../api/v2/data/getIpfsFolder.js";
+
+export type IJMetadata = {
+    affiliations?: Record<string, string>;
+    corresponding_author?: string;
+    flatFiles?: Array<EnhancedIpfsEntry> | undefined;
+    license_text?: string;
+    id?: number;
+    journal_name?: string;
+    journalName?: string;
+    date_submitted?: string;
+    submitted?: string;
+    thumbnail?: string | undefined;
+    thumbnail_optimized?: string;
+    thumbnailOptimized?: string;
+    source_code_git_url?: string;
+    code_url?: string;
+    reviews?: Array<{
+        reviewer_name?: string;
+        name?: string;
+        reviewer_email?: string;
+        email?: string;
+        date?: string;
+        review_date?: string;
+        content?: string;
+        review?: string;
+    }>;
+    revision_dois?: string[];
+    revisions?: Array<{ doi?: string }>;
+    revision_cids?: string[];
+    citation_list?: Array<{
+        type?: string;
+        id?: string;
+        title?: string;
+    }>;
+};
 
 /**
  * Build a minimal MyST Page JSON structure compatible with @awesome-myst/myst-zod Page.
@@ -9,7 +45,7 @@ export async function buildMystPageFromManifest(params: {
     manifest: ResearchObjectV1;
     dpid: number;
     history?: HistoryQueryResult;
-    ijMetadata?: Record<string, unknown> | null;
+    ijMetadata?: IJMetadata | null;
     version?: number;
 }): Promise<Record<string, unknown>> {
     const { manifest, dpid, history, ijMetadata, version } = params;
@@ -24,13 +60,14 @@ export async function buildMystPageFromManifest(params: {
     const authors:
         | Array<{ name: string; email?: string; roles?: string[]; orcid?: string; institutions?: string[] }>
         | undefined = manifest.authors?.map((a: ResearchObjectV1Author & { email?: string }) => {
-        const role = Array.isArray(a.role) ? a.role : [a.role];
+        // const role = Array.isArray(a.role) ? a.role : [a.role];
         return {
             name: a.name,
             email: a.email ?? undefined,
-            roles: role?.filter(Boolean) ?? undefined,
+            // roles: role?.filter(Boolean) ?? undefined,
             orcid: a.orcid ?? undefined,
-            institutions: a.organizations?.map((o) => o.name).filter(Boolean) ?? undefined,
+            affiliations: [ijMetadata?.affiliations?.[a.email ?? ""] ?? undefined].filter(Boolean),
+            corresponding: (ijMetadata?.corresponding_author ?? undefined) == a.email || undefined,
         };
     });
 
@@ -43,31 +80,7 @@ export async function buildMystPageFromManifest(params: {
         })) ?? [];
 
     // Pull optional IJ metadata, if available (typed access helpers)
-    const ij = (ijMetadata ?? {}) as {
-        id?: number;
-        journal_name?: string;
-        journalName?: string;
-        date_submitted?: string;
-        submitted?: string;
-        thumbnail?: string;
-        thumbnail_optimized?: string;
-        thumbnailOptimized?: string;
-        source_code_git_url?: string;
-        code_url?: string;
-        reviews?: Array<{
-            reviewer_name?: string;
-            name?: string;
-            reviewer_email?: string;
-            email?: string;
-            date?: string;
-            review_date?: string;
-            content?: string;
-            review?: string;
-        }>;
-        revision_dois?: string[];
-        revisions?: Array<{ doi?: string }>;
-        revision_cids?: string[];
-    };
+    const ij = (ijMetadata ?? {}) as IJMetadata;
 
     const ijPubId = typeof ij.id === "number" ? ij.id : undefined;
     const journalName = ij.journal_name ?? ij.journalName ?? undefined;
@@ -105,6 +118,23 @@ export async function buildMystPageFromManifest(params: {
 
     console.log({ version });
 
+    // let DPID_URL = "";
+    // switch (process.env.DPID_ENV) {
+    //     case "local":
+    //         DPID_URL = "http://localhost:3000";
+    //         break;
+    //     case "dev":
+    //         DPID_URL = "https://dev-beta.dpid.org";
+    //         break;
+
+    //     case "production":
+    //         DPID_URL = "https://dpid.org";
+    //         break;
+    //     default:
+    //         DPID_URL = "https://dpid.org";
+    //         break;
+    // }
+
     // MyST Page fields
     const page = {
         version: version !== undefined && !isNaN(version) && version > -1 ? version + 1 : revisionCids?.length ?? 0,
@@ -113,18 +143,20 @@ export async function buildMystPageFromManifest(params: {
         slug: String(ijPubId ?? dpid),
         location: "",
         dependencies: [] as unknown[],
+        doi: referencesFromManifest.find((r) => r.type === "doi")?.id ?? undefined,
+        thumbnail: ijMetadata?.thumbnail ?? undefined,
         frontmatter: {
             // Typical MyST/Sphinx-like fields
             title,
             abstract,
-            license,
+            license: ijMetadata?.license_text ?? license,
             keywords,
             tags,
             authors,
 
             // Extra IJ-specific fields when available
             date_submitted: dateSubmitted ?? earliestVersionTime,
-            externalPublicationId: ijPubId ?? dpid,
+            external_publication_id: ijPubId ?? dpid,
             revision_dois: revisionDois,
             revision_cids: revisionCids,
             source_code_git_url: sourceCodeGitUrl,
@@ -134,7 +166,18 @@ export async function buildMystPageFromManifest(params: {
             thumbnail_optimized: thumbnailOptimized,
         },
         mdast: { type: "root" },
-        references: referencesFromManifest,
+        downloads: ij.flatFiles?.map((f: EnhancedIpfsEntry) => ({
+            url:
+                !f.gateway || f.gateway === "public"
+                    ? `https://ipfs.io/ipfs/${f.cid}`
+                    : `https://ipfs.desci.com/ipfs/${f.cid}`,
+            title: f.path,
+            filename: f.name,
+            extra: {
+                size_bytes: f.size,
+                type: f.type,
+            },
+        })),
     };
 
     return page;

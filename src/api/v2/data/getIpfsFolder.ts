@@ -18,7 +18,7 @@ const PUBLIC_IPFS_GATEWAYS = process.env.PUBLIC_IPFS_GATEWAYS
 const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] => Directory
 
 const getKeyForIpfsTree = (cid: string, rootName: string, depthKey: string) =>
-    `resolver-${DPID_ENV}-ipfs-tree-${rootName}-${depthKey}-${cid}`;
+    `resolver-v2-${DPID_ENV}-ipfs-tree-${rootName}-${depthKey}-${cid}`;
 
 export type IpfsEntry = {
     name: string;
@@ -80,8 +80,23 @@ const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
     return null;
 };
 
+export const ipfsCat = async (arg: string): Promise<unknown> => {
+    const url = `${IPFS_GATEWAY.replace(/\/ipfs$/, "")}/api/v0/cat?arg=${encodeURIComponent(arg)}`;
+    logger.info({ url }, "Fetching IPFS content via public HTTP gateway");
+    const { data } = await axios({
+        method: "GET",
+        url,
+        headers: {
+            "Content-Type": "application/json",
+        },
+    });
+    return data;
+};
+
+export type EnhancedIpfsEntry = IpfsEntry & { gateway?: string; cid: string; name: string };
+
 /** Fetch a DAG node via IPFS HTTP API with retry logic and fallback gateway support */
-const fetchDagNode = async (arg: string, retries = 2): Promise<unknown> => {
+export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIpfsEntry> => {
     const gateways = [IPFS_DAG_API_URL, ...IPFS_DAG_API_FALLBACK_URLS];
     let lastError: unknown;
 
@@ -89,6 +104,7 @@ const fetchDagNode = async (arg: string, retries = 2): Promise<unknown> => {
         const url = `${gatewayUrl}/dag/get?arg=${encodeURIComponent(arg)}`;
 
         for (let attempt = 0; attempt <= retries; attempt++) {
+            const chosenGateway = gatewayUrl;
             try {
                 const { data } = await axios({
                     method: "POST",
@@ -105,7 +121,7 @@ const fetchDagNode = async (arg: string, retries = 2): Promise<unknown> => {
                         "Successfully fetched DAG node from fallback gateway",
                     );
                 }
-                return data as unknown;
+                return { ...data, gateway: chosenGateway } as EnhancedIpfsEntry;
             } catch (error) {
                 const axiosError = error as {
                     response?: { status?: number; data?: { Message?: string } };
@@ -180,7 +196,7 @@ const fetchDagNode = async (arg: string, retries = 2): Promise<unknown> => {
             },
             "Using public gateway fallback for missing CID",
         );
-        return publicData;
+        return { ...publicData, gateway: "public" } as EnhancedIpfsEntry;
     }
 
     // Content not found anywhere
@@ -221,7 +237,13 @@ export const getIpfsFolderTreeByCid = async (
     const rootDag: any = await fetchDagNode(rootCid);
     const rootIsDir = isUnixFsDirectory(rootDag);
     if (!rootIsDir) {
-        const fileEntry: IpfsEntry = { name: rootName, path: rootName, cid: rootCid, type: "file" };
+        const fileEntry: EnhancedIpfsEntry = {
+            name: rootName,
+            path: rootName,
+            cid: rootCid,
+            type: "file",
+            gateway: rootDag.gateway,
+        };
         if (redisService) {
             void redisService.setToCache(cacheKey, fileEntry, CACHE_TTL_ANCHORED).catch((error) => {
                 logger.warn({ error, key: cacheKey }, "Failed to set Redis cache for ipfs file entry");
@@ -282,24 +304,26 @@ export const getIpfsFolderTreeByCid = async (
             try {
                 const dagNode: any = await fetchDagNode(item.cid);
                 if (isUnixFsDirectory(dagNode)) {
-                    const dirEntry: IpfsEntry = {
+                    const dirEntry: EnhancedIpfsEntry = {
                         name: item.linkName,
                         path: item.path,
                         cid: item.cid,
                         type: "directory",
                         children: [],
+                        gateway: (item.parent as EnhancedIpfsEntry).gateway,
                     };
                     item.parent.children!.push(dirEntry);
                     if (maxDepth === "full" || item.depth < maxDepth) {
                         enqueueChildren(dirEntry, dagNode, item.path, item.depth);
                     }
                 } else {
-                    const fileEntry: IpfsEntry = {
+                    const fileEntry: EnhancedIpfsEntry = {
                         name: item.linkName,
                         path: item.path,
                         cid: item.cid,
                         size: item.size,
                         type: "file",
+                        gateway: dagNode.gateway,
                     };
                     item.parent.children!.push(fileEntry);
                 }
