@@ -9,6 +9,12 @@ import { redisService } from "../../../redis.js";
 const logger = parentLogger.child({ module: "/api/v2/data/getIpfsFolder" });
 
 const IPFS_DAG_API_URL = process.env.IPFS_DAG_API_URL ?? "https://ipfs.desci.com/api/v0";
+// Fallback IPFS gateways with DAG API support (if configured)
+const IPFS_DAG_API_FALLBACK_URLS = process.env.IPFS_DAG_API_FALLBACK_URL ? [process.env.IPFS_DAG_API_FALLBACK_URL] : [];
+// Public HTTP gateways for fetching raw content when DAG API is unavailable
+const PUBLIC_IPFS_GATEWAYS = process.env.PUBLIC_IPFS_GATEWAYS
+    ? process.env.PUBLIC_IPFS_GATEWAYS.split(",")
+    : ["https://ipfs.io/ipfs", "https://dweb.link/ipfs", "https://cloudflare-ipfs.com/ipfs"];
 const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] => Directory
 
 const getKeyForIpfsTree = (cid: string, rootName: string, depthKey: string) =>
@@ -23,11 +29,162 @@ export type IpfsEntry = {
     children?: IpfsEntry[];
 };
 
-/** Fetch a DAG node via IPFS HTTP API */
-const fetchDagNode = async (arg: string): Promise<unknown> => {
-    const url = `${IPFS_DAG_API_URL}/dag/get?arg=${encodeURIComponent(arg)}`;
-    const { data } = await axios({ method: "POST", url });
-    return data as unknown;
+/**
+ * Fetch raw content from public HTTP gateway and create a minimal DAG structure.
+ * This is a fallback when DAG API is unavailable.
+ */
+const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
+    for (const gateway of PUBLIC_IPFS_GATEWAYS) {
+        try {
+            const url = `${gateway}/${cid}`;
+            const response = await axios({
+                method: "GET",
+                url,
+                timeout: 30000,
+                responseType: "arraybuffer",
+                maxContentLength: 100 * 1024 * 1024, // 100MB max
+                validateStatus: (status) => status === 200 || status === 404,
+            });
+
+            if (response.status === 200) {
+                logger.info(
+                    {
+                        cid,
+                        gateway,
+                        size: response.data.byteLength,
+                        contentType: response.headers["content-type"],
+                    },
+                    "Successfully fetched content from public HTTP gateway",
+                );
+
+                // Create a minimal DAG-like structure for file content
+                // This mimics what the DAG API would return for a raw file
+                return {
+                    Data: {
+                        "/": {
+                            bytes: Buffer.from(response.data).toString("base64"),
+                        },
+                    },
+                    Links: [], // Files have no links
+                };
+            }
+        } catch (error) {
+            const axiosError = error as { response?: { status?: number }; message?: string };
+            if (axiosError.response?.status === 404) {
+                logger.debug({ cid, gateway }, "CID not found on this public gateway");
+                continue;
+            }
+            logger.debug({ cid, gateway, error: axiosError.message }, "Failed to fetch from public gateway");
+        }
+    }
+    return null;
+};
+
+/** Fetch a DAG node via IPFS HTTP API with retry logic and fallback gateway support */
+const fetchDagNode = async (arg: string, retries = 2): Promise<unknown> => {
+    const gateways = [IPFS_DAG_API_URL, ...IPFS_DAG_API_FALLBACK_URLS];
+    let lastError: unknown;
+
+    for (const gatewayUrl of gateways) {
+        const url = `${gatewayUrl}/dag/get?arg=${encodeURIComponent(arg)}`;
+
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const { data } = await axios({
+                    method: "POST",
+                    url,
+                    timeout: 30000, // 30 second timeout
+                });
+                // Log if we had to use a fallback gateway
+                if (gatewayUrl !== IPFS_DAG_API_URL) {
+                    logger.info(
+                        {
+                            cid: arg,
+                            gateway: gatewayUrl,
+                        },
+                        "Successfully fetched DAG node from fallback gateway",
+                    );
+                }
+                return data as unknown;
+            } catch (error) {
+                const axiosError = error as {
+                    response?: { status?: number; data?: { Message?: string } };
+                    message?: string;
+                };
+                lastError = error;
+                const isLastAttempt = attempt === retries;
+                const status = axiosError?.response?.status;
+                const errorMessage = axiosError?.response?.data?.Message;
+
+                // If it's a 500 with "merkledag: not found", try next gateway immediately
+                if (status === 500 && errorMessage?.includes("not found")) {
+                    logger.debug(
+                        {
+                            cid: arg,
+                            gateway: gatewayUrl,
+                            message: errorMessage,
+                        },
+                        "CID not found on this gateway, trying next",
+                    );
+                    break; // Try next gateway
+                }
+
+                // Don't retry on 4xx errors (client errors) unless it's 429 (rate limit)
+                if (status && status >= 400 && status < 500 && status !== 429) {
+                    break; // Try next gateway
+                }
+
+                if (isLastAttempt) {
+                    logger.debug(
+                        {
+                            error: axiosError.message,
+                            cid: arg,
+                            status,
+                            gateway: gatewayUrl,
+                            attempts: attempt + 1,
+                        },
+                        "Failed to fetch DAG node from gateway after retries",
+                    );
+                    break; // Try next gateway
+                }
+
+                // Exponential backoff: 500ms, 1s
+                const delay = Math.pow(2, attempt) * 500;
+                logger.debug(
+                    {
+                        cid: arg,
+                        attempt: attempt + 1,
+                        delay,
+                        status,
+                        gateway: gatewayUrl,
+                    },
+                    "Retrying DAG fetch",
+                );
+                await new Promise((resolve) => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    // All DAG API gateways failed - try public HTTP gateway as last resort
+    const lastErrorTyped = lastError as { response?: { data?: { Message?: string } }; message?: string } | undefined;
+    const errorMsg = lastErrorTyped?.response?.data?.Message || lastErrorTyped?.message || "Unknown error";
+
+    logger.debug({ cid: arg }, "All DAG API gateways failed, trying public HTTP gateways");
+    const publicData = await fetchViaPublicHttpGateway(arg);
+
+    if (publicData) {
+        logger.info(
+            {
+                cid: arg,
+                note: "Content fetched from public IPFS gateway - consider pinning to ipfs.desci.com",
+            },
+            "Using public gateway fallback for missing CID",
+        );
+        return publicData;
+    }
+
+    // Content not found anywhere
+    throw new Error(`Failed to fetch DAG node ${arg} from all available gateways: ${errorMsg}`);
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -147,7 +304,25 @@ export const getIpfsFolderTreeByCid = async (
                     item.parent.children!.push(fileEntry);
                 }
             } catch (error) {
-                logger.warn({ error, cid: item?.cid, path: item?.path }, "Failed to fetch DAG node; skipping child");
+                const errorTyped = error as {
+                    message?: string;
+                    response?: { data?: { Message?: string }; status?: number };
+                };
+                const errorMessage = errorTyped?.message || errorTyped?.response?.data?.Message;
+                const isMissingContent = errorMessage?.includes("not found");
+
+                logger.warn(
+                    {
+                        error: errorMessage,
+                        cid: item?.cid,
+                        path: item?.path,
+                        isMissingContent,
+                        status: errorTyped?.response?.status,
+                    },
+                    isMissingContent
+                        ? "CID not found in any IPFS gateway; skipping child"
+                        : "Failed to fetch DAG node; skipping child",
+                );
             }
         }
     };

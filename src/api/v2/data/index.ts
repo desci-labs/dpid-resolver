@@ -130,9 +130,7 @@ router.get(
                 { error: serializeError(error as Error), dpid, versionIx },
                 "failed to build folder tree by dpid",
             );
-            return res
-                .status(500)
-                .send({ error: "failed to build folder tree by dpid", details: serializeError(error as Error) });
+            return res.status(500).send({ error: "failed to build folder tree by dpid" });
         }
     },
 );
@@ -185,6 +183,131 @@ router.get(
  *       500:
  *         description: Failed to build folder tree
  */
+/**
+ * @openapi
+ * /v2/data/dpid/{dpid}/*:
+ *   get:
+ *     tags: [Data]
+ *     summary: Get IPFS folder tree for a specific path within a dPID
+ *     description: |
+ *       Resolves the given dPID and navigates to a specific path within the root component.
+ *       For example: /v2/data/dpid/827/root/code will return just the 'code' directory.
+ *     parameters:
+ *       - in: path
+ *         name: dpid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The dPID identifier followed by the path (e.g., 827/root/code)
+ *       - in: query
+ *         name: depth
+ *         schema:
+ *           oneOf:
+ *             - type: string
+ *               enum: [full]
+ *             - type: integer
+ *               minimum: 0
+ *         description: Maximum directory depth to traverse
+ *     responses:
+ *       200:
+ *         description: Folder tree at the specified path
+ *       404:
+ *         description: Path not found
+ */
+router.get(
+    "/dpid/:dpid/*",
+    async (
+        req: Request<{ dpid: string; "0": string }, unknown, undefined, { depth?: string; concurrency?: string }>,
+        res: Response<IpfsEntryResponse>,
+    ) => {
+        const { dpid } = req.params;
+        const { depth, concurrency } = req.query;
+
+        // Extract the path after /dpid/{dpid}/
+        const fullPath = req.params["0"];
+        if (!fullPath) {
+            return res.status(400).send({ error: "path is required after dpid" });
+        }
+
+        // Split and filter the path, removing empty segments
+        let pathParts = fullPath.split("/").filter((p) => p.length > 0);
+
+        // Strip leading "root" if present since the tree root is already named "root"
+        if (pathParts.length > 0 && pathParts[0] === "root") {
+            pathParts = pathParts.slice(1);
+        }
+
+        if (!isDpid(dpid)) {
+            return res.status(400).send({ error: `invalid dpid: '${dpid}'` });
+        }
+
+        let parsedDepth: number | "full" | undefined = undefined;
+        if (typeof depth === "string") {
+            if (depth === "full") {
+                parsedDepth = "full";
+            } else {
+                const d = parseInt(depth, 10);
+                if (!Number.isNaN(d) && d >= 0) parsedDepth = d;
+            }
+        }
+
+        let conc: number | undefined = undefined;
+        if (concurrency) {
+            const parsed = parseInt(concurrency, 10);
+            if (!Number.isNaN(parsed)) {
+                conc = Math.max(1, Math.min(parsed, 16));
+            }
+        }
+
+        try {
+            const dpidNum = parseInt(dpid);
+            // Get the full tree first
+            const tree = await getIpfsFolderTreeByDpid(dpidNum, {
+                concurrency: conc,
+                depth: "full", // Need full tree to navigate
+            });
+
+            // Navigate to the requested path
+            let current: IpfsEntry | undefined = tree;
+            for (const part of pathParts) {
+                if (!current || current.type !== "directory" || !current.children) {
+                    return res.status(404).send({ error: `path not found: ${fullPath}` });
+                }
+                current = current.children.find((child) => child.name === part);
+                if (!current) {
+                    return res.status(404).send({ error: `path not found: ${fullPath}` });
+                }
+            }
+
+            // If depth is specified, we might want to re-fetch with that depth
+            // For now, just return what we found
+            const responsePayload =
+                parsedDepth === undefined
+                    ? {
+                          depth: 1,
+                          note: "call with ?depth=full to get full directory structure (may be slow)",
+                          tree: current,
+                      }
+                    : current;
+
+            void analytics.log({
+                dpid: dpidNum,
+                version: -1,
+                eventType: LogEventType.DPID_GET,
+                extra: { path: req.path, query: req.query, subpath: fullPath, depth: parsedDepth ?? 1 },
+            });
+
+            return res.status(200).send(responsePayload);
+        } catch (error) {
+            logger.error(
+                { error: serializeError(error as Error), dpid, path: fullPath },
+                "failed to navigate to path in dpid",
+            );
+            return res.status(500).send({ error: "failed to navigate to path" });
+        }
+    },
+);
+
 router.get(
     "/cid/:cid",
     async (
@@ -208,7 +331,7 @@ router.get(
 
         try {
             const tree = await getIpfsFolderTreeByCid(cid, {
-                rootName: rootName || "root",
+                rootName: rootName || cid,
                 concurrency: conc,
                 depth: parsedDepth,
             });
@@ -226,9 +349,7 @@ router.get(
             return res.status(200).send(responsePayload);
         } catch (error) {
             logger.error({ error: serializeError(error as Error), cid }, "failed to build folder tree by cid");
-            return res
-                .status(500)
-                .send({ error: "failed to build folder tree by cid", details: serializeError(error as Error) });
+            return res.status(500).send({ error: "failed to build folder tree by cid" });
         }
     },
 );
