@@ -1,21 +1,62 @@
+/**
+NOTE: this module depends on the semi-defunct subgraph index, meaning it only covers
+dPIDs up to 261 in prod and fails in dev.
+
+Kept around on life support as a couple of migration/dpid repair scripts in desci-server uses it.
+*/
+
 import { type Request, type Response } from "express";
-import {
-    type GraphResult,
-    PREFIX_HARDCODE_BETA,
-    THE_GRAPH_RESOLVER_URL,
-    hexToCid,
-} from "../../dpid-reader/DpidReader.js";
-import {
-    getAllDpidRegisrations,
-    getAllResearchObjectsForDpidRegistrations,
-} from "../../dpid-reader/TheGraphResolver.js";
+import { safeHexToCid } from "../../util/conversions.js";
+import { getAllDpidRegisrations, getAllResearchObjectsForDpidRegistrations } from "../../theGraph.js";
 import parentLogger from "../../logger.js";
 import analytics, { LogEventType } from "../../analytics.js";
 const logger = parentLogger.child({ module: "api/v1/list" });
 
-const safeHexToCid = (hex: string) => {
-    return hex.length > 2 ? hexToCid(hex) : "";
-};
+export interface DpidRequest {
+    dpid: string;
+    version?: string;
+    suffix?: string;
+    prefix: string;
+    /** @deprecated use format instead */
+    raw?: boolean;
+    /** @deprecated use format instead */
+    jsonld?: boolean;
+    domain?: string;
+    format?: "jsonld" | "json" | "raw" | "myst";
+}
+
+// the value of string "beta" in bytes32 encoded as hex
+export const PREFIX_HARDCODE_BETA = "0x6265746100000000000000000000000000000000000000000000000000000000";
+
+export const THE_GRAPH_RESOLVER_URL: { [key: string]: string } =
+    process.env.DPID_ENV === "dev"
+        ? {
+              beta: "https://graph-sepolia-dev.desci.com/subgraphs/name/nodes",
+              __registry: "https://graph-sepolia-dev.desci.com/subgraphs/name/dpid-registry",
+          }
+        : process.env.DPID_ENV === "staging"
+          ? {
+                beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+                __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
+            }
+          : {
+                beta: "https://graph-sepolia-prod.desci.com/subgraphs/name/nodes",
+                __registry: "https://graph-sepolia-prod.desci.com/subgraphs/name/dpid-registry",
+            };
+
+interface GraphResultVersion {
+    id: string;
+    cid: string;
+    time: string;
+}
+
+export interface GraphResult {
+    id: string;
+    id10: string;
+    recentCid: string;
+    owner: string;
+    versions: GraphResultVersion[];
+}
 
 const transformGraphResult =
     (transactionHashToDpid: { [hash: string]: string }) => (r: ResearchObjectVersionResult) => {
