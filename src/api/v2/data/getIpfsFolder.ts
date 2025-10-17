@@ -30,7 +30,8 @@ export type IpfsEntry = {
 };
 
 /**
- * Fetch raw content from public HTTP gateway and create a minimal DAG structure.
+ * Check content existence on public HTTP gateway without downloading the body (HEAD).
+ * Returns a minimal DAG-like object to indicate a file node when found.
  * This is a fallback when DAG API is unavailable.
  */
 const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
@@ -38,11 +39,9 @@ const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
         try {
             const url = `${gateway}/${cid}`;
             const response = await axios({
-                method: "GET",
+                method: "HEAD",
                 url,
-                timeout: 30000,
-                responseType: "arraybuffer",
-                maxContentLength: 100 * 1024 * 1024, // 100MB max
+                timeout: 15000,
                 validateStatus: (status) => status === 200 || status === 404,
             });
 
@@ -51,21 +50,21 @@ const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
                     {
                         cid,
                         gateway,
-                        size: response.data.byteLength,
                         contentType: response.headers["content-type"],
+                        contentLength: response.headers["content-length"],
                     },
-                    "Successfully fetched content from public HTTP gateway",
+                    "Content exists on public HTTP gateway (HEAD)",
                 );
 
-                // Create a minimal DAG-like structure for file content
-                // This mimics what the DAG API would return for a raw file
+                // Return a minimal structure that will be treated as a file (not a directory)
+                // by isUnixFsDirectory (bytes !== MAGIC_UNIXFS_DIR_FLAG)
                 return {
                     Data: {
                         "/": {
-                            bytes: Buffer.from(response.data).toString("base64"),
+                            bytes: "",
                         },
                     },
-                    Links: [], // Files have no links
+                    Links: [],
                 };
             }
         } catch (error) {
@@ -74,7 +73,7 @@ const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
                 logger.debug({ cid, gateway }, "CID not found on this public gateway");
                 continue;
             }
-            logger.debug({ cid, gateway, error: axiosError.message }, "Failed to fetch from public gateway");
+            logger.debug({ cid, gateway, error: axiosError.message }, "Failed to query public gateway (HEAD)");
         }
     }
     return null;
