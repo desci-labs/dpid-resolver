@@ -1,10 +1,10 @@
 import axios from "axios";
-import type { ResearchObjectV1 } from "@desci-labs/desci-models";
 
 import { CACHE_TTL_ANCHORED, DPID_ENV, IPFS_GATEWAY } from "../../../util/config.js";
 import parentLogger from "../../../logger.js";
 import { resolveDpid } from "../resolvers/dpid.js";
 import { redisService } from "../../../redis.js";
+import { getManifest } from "../../../util/manifests.js";
 
 const logger = parentLogger.child({ module: "/api/v2/data/getIpfsFolder" });
 
@@ -378,8 +378,11 @@ export const getIpfsFolderTreeByDpid = async (
         throw new Error("Failed to resolve manifest for dpid");
     }
 
-    const manifestUrl = `${IPFS_GATEWAY}/${history.manifest}`;
-    const manifest = (await fetch(manifestUrl).then(async (r) => await r.json())) as ResearchObjectV1;
+    const cid = history.manifest;
+    const manifest = await getManifest(cid);
+    if (!manifest) {
+        throw new Error("Could not get manifest");
+    }
 
     const rootComponent = manifest.components?.find((c) => c.name === "root");
     if (!rootComponent || !rootComponent.payload || typeof rootComponent.payload.cid !== "string") {

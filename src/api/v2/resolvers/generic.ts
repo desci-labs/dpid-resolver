@@ -10,6 +10,7 @@ import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
 import { isDpid, isVersionString } from "../../../util/validation.js";
 import { getIpfsFolderTreeByCid, ipfsCat, type EnhancedIpfsEntry } from "../data/getIpfsFolder.js";
+import { getManifest } from "../../../util/manifests.js";
 
 const MODULE_PATH = "/api/v2/resolvers/generic" as const;
 
@@ -120,41 +121,32 @@ export const resolveGenericHandler = async (
     }
 
     if (isJsonld) {
-        logger.warn({ path, query }, "got request for jsonld");
-        const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
-
-        // console.log({ resolveResult });
-
-        const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
-
+        logger.info({ path, query }, "got request for jsonld");
+        const { manifest: cid } = await resolveDpid(parseInt(dpid), versionIx);
         const transformer = new RoCrateTransformer();
 
-        const response = await fetch(manifestUrl);
+        const manifest = await getManifest(cid);
+        if (!manifest) {
+            return res.status(500).send({ error: "Could not get manifest", cid });
+        }
 
-        // console.log({ manifestUrl });
-
-        const roCrate = transformer.exportObject(await response.json());
-
+        const roCrate = transformer.exportObject(manifest);
         return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
     }
 
     if (isMyst) {
-        logger.warn({ path, query }, "got request for myst");
+        logger.info({ path, query }, "got request for myst");
         const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
 
-        const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
-        const response = await fetch(manifestUrl);
-        if (!response.ok) {
-            return res.status(500).send({ error: "Could not fetch manifest", manifest: resolveResult.manifest });
+        const cid = resolveResult.manifest;
+        const manifest = await getManifest(cid);
+        if (!manifest) {
+            return res.status(500).send({ error: "Could not get manifest", cid });
         }
-
-        const manifest = (await response.json()) as ResearchObjectV1;
 
         const dataBucket = manifest.components[0].payload;
         if (!dataBucket) {
-            return res
-                .status(500)
-                .send({ error: "Could not find data bucket in manifest", manifest: resolveResult.manifest });
+            return res.status(500).send({ error: "Could not find data bucket in manifest", cid });
         }
 
         const ipfsFolder = await getIpfsFolderTreeByCid(dataBucket.cid, {
@@ -274,16 +266,22 @@ export const resolveGenericHandler = async (
 
     /** dPID path doesn't refer to a file in the data tree */
     const noDagPath = suffix.length === 0;
-    const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
+    const cid = resolveResult.manifest;
+    const manifestUrl = `${IPFS_GATEWAY}/${cid}`;
 
     if (noDagPath) {
         // Return manifest url as is
         logger.info({ dpid, manifestUrl, path, query, suffix }, "redirecting raw request to IPFS resolver");
         return res.redirect(manifestUrl);
     } else if (suffix.startsWith("root") || suffix.startsWith("data")) {
-        logger.info({ dpid, path, query, suffix }, "assuming suffix is a drive path");
         // The suffix is pointing to a target in drive, let's find the UnixFS root
-        const manifest = (await fetch(manifestUrl).then(async (r) => await r.json())) as ResearchObjectV1;
+        logger.info({ dpid, path, query, suffix }, "assuming suffix is a drive path");
+
+        const manifest = await getManifest(cid);
+        if (!manifest) {
+            return res.status(500).send({ error: "Could not get manifest", cid });
+        }
+
         const maybeDataBucket = manifest.components.find((c) => c.name === "root");
         // || manifest.components[0] shouldn't be necessary?
 
