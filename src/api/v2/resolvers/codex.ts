@@ -125,7 +125,7 @@ export const resolveCodexHandler = async (
     /* Return early with a redirect if the raw manifest file was requested */
     const cid = historyResult.manifest;
     if (wantRaw) {
-        return res.redirect(`${IPFS_GATEWAY}/${historyResult.manifest}`);
+        return res.redirect(`${IPFS_GATEWAY}/${cid}`);
     }
 
     if (wantJsonLd) {
@@ -133,7 +133,7 @@ export const resolveCodexHandler = async (
         if (!manifest) {
             return res.status(500).send({
                 error: "Could not resolve manifest",
-                details: `Couldn't find manifest ${historyResult.manifest} for RO-Crate transform`,
+                details: `Couldn't find manifest ${cid} for RO-Crate transform`,
                 params: req.params,
                 path: MODULE_PATH,
             });
@@ -148,7 +148,7 @@ export const resolveCodexHandler = async (
         if (!manifest) {
             return res.status(500).send({
                 error: "Could not resolve manifest",
-                details: `Couldn't find manifest ${historyResult.manifest} for MyST transform`,
+                details: `Couldn't find manifest ${cid} for MyST transform`,
                 params: req.params,
                 path: MODULE_PATH,
             });
