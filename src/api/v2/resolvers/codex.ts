@@ -124,9 +124,8 @@ export const resolveCodexHandler = async (
 
     /* Return early with a redirect if the raw manifest file was requested */
     const cid = historyResult.manifest;
-    const manifestUrl = `${IPFS_GATEWAY}/${historyResult.manifest}`;
     if (wantRaw) {
-        return res.redirect(manifestUrl);
+        return res.redirect(`${IPFS_GATEWAY}/${historyResult.manifest}`);
     }
 
     if (wantJsonLd) {
