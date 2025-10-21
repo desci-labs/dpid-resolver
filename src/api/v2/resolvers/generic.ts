@@ -127,7 +127,7 @@ export const resolveGenericHandler = async (
 
         const manifest = await getManifest(cid);
         if (!manifest) {
-            return res.status(404).send({ error: "Could not get manifest", cid });
+            return res.status(500).send({ error: "Could not get manifest", cid });
         }
 
         const roCrate = transformer.exportObject(manifest);
@@ -141,7 +141,7 @@ export const resolveGenericHandler = async (
         const cid = resolveResult.manifest;
         const manifest = await getManifest(cid);
         if (!manifest) {
-            return res.status(404).send({ error: "Could not get manifest", cid });
+            return res.status(500).send({ error: "Could not get manifest", cid });
         }
 
         const dataBucket = manifest.components[0].payload;
@@ -279,7 +279,7 @@ export const resolveGenericHandler = async (
 
         const manifest = await getManifest(cid);
         if (!manifest) {
-            return res.status(404).send({ error: "Could not get manifest", cid });
+            return res.status(500).send({ error: "Could not get manifest", cid });
         }
 
         const maybeDataBucket = manifest.components.find((c) => c.name === "root");

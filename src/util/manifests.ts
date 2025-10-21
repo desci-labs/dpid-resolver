@@ -8,7 +8,13 @@ const logger = parentLogger.child({
 });
 
 export const getManifest = async (cid: string): Promise<ResearchObjectV1 | undefined> => {
-    const response = await fetch(`${IPFS_GATEWAY}/${cid}`);
+    let response;
+    try {
+        response = await fetch(`${IPFS_GATEWAY}/${cid}`);
+    } catch (error) {
+        logger.error({ cid, error }, "Network error fetching manifest from IPFS gateway");
+        return undefined;
+    }
     if (!response.ok) {
         logger.error({ cid }, "Failed to fetch manifest from IPFS gateway");
         return undefined;
