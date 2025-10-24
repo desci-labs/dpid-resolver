@@ -169,6 +169,8 @@ export const resolveGenericHandler = async (
                     author_email: string;
                     author_institution: string;
                 };
+                tags?: string[];
+                source_code_git_repo?: string;
             };
             logger.info({ ipfsFolder }, "Temp metadata");
 
@@ -186,6 +188,8 @@ export const resolveGenericHandler = async (
                 thumbnail: cover ? `https://pub.desci.com/ipfs/${cover}` : undefined,
                 flatFiles: flattenIpfsFolder(ipfsFolder).filter((f) => f.type === "file"),
                 doi: tempMetadata.revisions?.[0]?.doi,
+                tags: tempMetadata.tags,
+                source_code_git_repo: tempMetadata.source_code_git_repo,
             };
         } catch (e) {
             logger.error(e, "Error fetching ij metadata");

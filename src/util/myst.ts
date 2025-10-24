@@ -16,8 +16,10 @@ export type IJMetadata = {
     thumbnail_optimized?: string;
     thumbnailOptimized?: string;
     source_code_git_url?: string;
+    source_code_git_repo?: string;
     code_url?: string;
     doi?: string;
+    tags?: string[];
     reviews?: Array<{
         reviewer_name?: string;
         name?: string;
@@ -57,8 +59,12 @@ export async function buildMystPageFromManifest(params: {
     const title = manifest.title ?? undefined;
     const abstract = manifest.description ?? undefined;
     const license = manifest.defaultLicense ?? undefined;
-    const keywords = manifest.keywords ?? undefined;
+    const manifestKeywords = manifest.keywords ?? undefined;
     const tags = manifest.tags?.map((t) => t.name) ?? undefined;
+
+    // Merge manifest keywords with IJ metadata tags for frontmatter keywords
+    const ijTags = ijMetadata?.tags ?? [];
+    const keywords = [...(manifestKeywords ?? []), ...ijTags].filter(Boolean);
 
     // Map authors
     const authors:
@@ -92,6 +98,10 @@ export async function buildMystPageFromManifest(params: {
     const thumbnail: string | undefined = ij.thumbnail ?? undefined;
     const thumbnailOptimized: string | undefined = ij.thumbnail_optimized ?? ij.thumbnailOptimized ?? undefined;
     const sourceCodeGitUrl: string | undefined = ij.source_code_git_url ?? ij.code_url ?? undefined;
+    const sourceCodeGitRepo: string | undefined = ij.source_code_git_repo ?? undefined;
+
+    // Extract github URL if source_code_git_repo contains "github.com"
+    const githubUrl: string | undefined = sourceCodeGitRepo?.includes("github.com") ? sourceCodeGitRepo : undefined;
 
     const reviewers: Array<{ name?: string; email?: string; date?: string; content?: string }> | undefined =
         Array.isArray(ij.reviews)
@@ -180,6 +190,7 @@ export async function buildMystPageFromManifest(params: {
             revision_dois: revisionDois,
             revision_cids: revisionCids,
             source_code_git_url: sourceCodeGitUrl,
+            github: githubUrl,
             reviewers,
             journal_name: journalName,
             thumbnail,
