@@ -17,8 +17,11 @@ const PUBLIC_IPFS_GATEWAYS = process.env.PUBLIC_IPFS_GATEWAYS
     : ["https://ipfs.io/ipfs", "https://dweb.link/ipfs", "https://cloudflare-ipfs.com/ipfs"];
 const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] => Directory
 
+// Cache key version history:
+// v2: Initial versioned cache key
+// v3: Invalidated to force re-fetch with public gateway fallback for missing files
 const getKeyForIpfsTree = (cid: string, rootName: string, depthKey: string) =>
-    `resolver-v2-${DPID_ENV}-ipfs-tree-${rootName}-${depthKey}-${cid}`;
+    `resolver-v3-${DPID_ENV}-ipfs-tree-${rootName}-${depthKey}-${cid}`;
 
 export type IpfsEntry = {
     name: string;
