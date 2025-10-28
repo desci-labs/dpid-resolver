@@ -10,7 +10,10 @@ RUN --mount=type=cache,target=/usr/src/app/.npm \
   npm set cache /usr/src/app/.npm && \
   npm ci
 COPY . .
-RUN npm run build
+
+# Mount the secret as an environment variable for the build command
+RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,env=SENTRY_AUTH_TOKEN \
+    npm run build
 
 FROM base AS prod
 

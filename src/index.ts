@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express, { type Express, type Request } from "express";
+import * as Sentry from "@sentry/node";
 import api from "./api/index.js";
 import logger from "./logger.js";
 import { pinoHttp } from "pino-http";
@@ -70,11 +71,17 @@ app.use(
     }),
 );
 
+app.get("/debug-sentry", function mainHandler(req, res) {
+    throw new Error("My first Sentry error!");
+});
+
 app.use("/api", api);
 
 app.get("/*", (req, res) =>
     resolveGenericHandler(req as Request<ResolveGenericParams, unknown, undefined, ResolveGenericQueryParams>, res),
 );
+
+Sentry.setupExpressErrorHandler(app);
 
 app.listen(port, () => {
     logger.info(`⚡️[server]: Server is running at http://localhost:${port}`);

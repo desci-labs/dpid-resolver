@@ -1,18 +1,19 @@
 {
-    "compilerOptions": {
-        // https://www.typescriptlang.org/docs/handbook/modules/guides/choosing-compiler-options.html
-        "module": "nodenext",
-        "verbatimModuleSyntax": true,
-        "resolveJsonModule": true,
-        "forceConsistentCasingInFileNames": true,
-        "strict": true,
-        "inlineSources": true,
-        "inlineSourceMap": true,
-        "skipLibCheck": true,
-        "outDir": "./dist"
-    },
-    "include": [
-        "src/**/*",
-        "test/**/*"
-    ]
+  "compilerOptions": {
+    // https://www.typescriptlang.org/docs/handbook/modules/guides/choosing-compiler-options.html
+    "module": "nodenext",
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "inlineSources": true,
+    "inlineSourceMap": true,
+    "skipLibCheck": true,
+    "outDir": "./dist",
+    "allowJs": true
+  },
+  "include": [
+    "src/**/*",
+    "test/**/*"
+  ]
 }
