@@ -36,7 +36,7 @@ spec:
                   name: dpid-resolver-dev
                   command: ["/bin/bash", "-c"]
                   args:
-                      - dumb-init node --import dist/instrument.mjs dist/index.js;
+                      - dumb-init node --import ./dist/instrument.mjs dist/index.js;
                   env:
                     - name: BASH_ENV
                       value: /vault/secrets/config
