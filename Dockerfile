@@ -19,6 +19,7 @@ FROM base AS prod
 
 RUN npm ci --omit=dev
 COPY --chown=node:node --from=builder /usr/src/app/dist dist/
+COPY --chown=node:node --from=builder /usr/src/app/src/instrument.mjs dist/instrument.mjs
 COPY --chown=node:node --from=builder /usr/src/app/.env.example .env
 
 USER node
