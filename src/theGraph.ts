@@ -1,14 +1,14 @@
 import axios from "axios";
-import parentLogger from "../logger.js";
-import type { SortDirection } from "../api/v1/list.js";
+import parentLogger from "./logger.js";
+import type { SortDirection } from "./api/v1/list.js";
 const logger = parentLogger.child({ module: "TheGraphResolver" });
 
 /**
- * 
- * @param url 
- * @param prefix 
- * @returns 
- * 
+ *
+ * @param url
+ * @param prefix
+ * @returns
+ *
  {
   "data": {
     "registers": [
@@ -72,7 +72,7 @@ export const getIndexedResearchObjects = async (url: string, hex: string[]) => {
         id, id10, recentCid, owner, versions(orderBy: time, orderDirection: desc) {
           cid, id, time
         }
-      } 
+      }
     }`;
     return query(url, q);
 };

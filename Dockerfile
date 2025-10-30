@@ -10,15 +10,18 @@ RUN --mount=type=cache,target=/usr/src/app/.npm \
   npm set cache /usr/src/app/.npm && \
   npm ci
 COPY . .
-RUN npm run build
+
+RUN --mount=type=secret,id=SENTRY_AUTH_TOKEN,env=SENTRY_AUTH_TOKEN \
+  npm run build && \
+  ./uploadSourcemaps.sh
 
 FROM base AS prod
 
+RUN npm ci --omit=dev
 COPY --chown=node:node --from=builder /usr/src/app/dist dist/
-COPY --chown=node:node --from=builder /usr/src/app/node_modules node_modules/
 COPY --chown=node:node --from=builder /usr/src/app/.env.example .env
 
 USER node
 EXPOSE 5460
 
-CMD [ "dumb-init", "node", "--no-warnings=ExperimentalWarning", "dist/index.js" ]
+CMD [ "dumb-init", "node", "dist/index.js" ]
