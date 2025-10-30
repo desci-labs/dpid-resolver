@@ -9,8 +9,7 @@
     "inlineSources": true,
     "inlineSourceMap": true,
     "skipLibCheck": true,
-    "outDir": "./dist",
-    "allowJs": true
+    "outDir": "./dist"
   },
   "include": [
     "src/**/*",
