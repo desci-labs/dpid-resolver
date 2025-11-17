@@ -147,4 +147,61 @@ describe("/api/v2/query", { timeout: 10_000 }, async () => {
                 });
         });
     });
+
+    describe("/owner", async () => {
+        const testOwnerId = "0x5249a44b2abea543b2c441ac4964a08deb3ed3cb";
+
+        it("should return research objects filtered by owner address", async () => {
+            await request(app)
+                .get(`/api/v2/query/owner/${testOwnerId}`)
+                .expect(200)
+                .expect((res: { body: Awaited<ReturnType<typeof getCodexHistory>>[] }) => {
+                    expect(Array.isArray(res.body)).toBe(true);
+                    expect(res.body.length).toBeGreaterThan(0);
+
+                    res.body.forEach((obj) => {
+                        // Check that each object has the correct owner
+                        // Owner can be in format: did:pkh:eip155:1337:0x... or just 0x...
+                        const ownerMatches =
+                            obj.owner === testOwnerId ||
+                            obj.owner.toLowerCase().endsWith(testOwnerId.toLowerCase());
+                        expect(ownerMatches).toBe(true);
+
+                        // Validate object structure
+                        expect(obj).toEqual(
+                            expect.objectContaining({
+                                id: expect.any(String),
+                                version: expect.any(String),
+                                owner: expect.any(String),
+                                manifest: expect.any(String),
+                                title: expect.any(String),
+                                // license is optional in the model
+                                ...((obj as ResearchObject).license ? { license: expect.any(String) } : {}),
+                            }),
+                        );
+                    });
+                });
+        });
+
+        it("should return empty array for owner with no research objects", async () => {
+            const nonExistentOwner = "0x0000000000000000000000000000000000000000";
+            await request(app)
+                .get(`/api/v2/query/owner/${nonExistentOwner}`)
+                .expect(200)
+                .expect((res: { body: unknown[] }) => {
+                    expect(Array.isArray(res.body)).toBe(true);
+                    expect(res.body.length).toBe(0);
+                });
+        });
+
+        it("should return 400 when owner id is missing", async () => {
+            await request(app)
+                .get("/api/v2/query/owner/")
+                .expect(400)
+                .expect((res: { body: { error: string; details: string } }) => {
+                    expect(res.body.error).toBe("invalid request");
+                    expect(res.body.details).toBe("missing owner id in path parameter");
+                });
+        });
+    });
 });

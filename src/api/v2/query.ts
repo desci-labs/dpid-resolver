@@ -2,6 +2,7 @@ import { Router } from "express";
 import { objectQueryHandler } from "./queries/objects.js";
 import { historyQueryHandler } from "./queries/history.js";
 import { dpidListHandler } from "./queries/dpids.js";
+import { ownerQueryHandler } from "./queries/owner.js";
 
 const router = Router();
 
@@ -525,5 +526,90 @@ router.post("/history", historyQueryHandler);
  *               $ref: '#/components/schemas/ResearchObjectQueryError'
  */
 router.get("/dpids", dpidListHandler);
+
+/**
+ * @swagger
+ * /v2/query/owner/{id}:
+ *   get:
+ *     tags:
+ *       - Query
+ *     summary: Query for research objects by owner
+ *     description: |
+ *       Retrieve all research objects owned by a specific address. This endpoint:
+ *       - Fetches all research objects from the system
+ *       - Filters them by the specified owner address
+ *       - Supports both full DID format and plain address format
+ *
+ *       ## Owner ID Format
+ *       The owner ID can be provided in two formats:
+ *       - **Plain address**: `0x90b2c654f18e491a566d6a38c491cf82745e5987`
+ *       - **Full DID**: `did:pkh:eip155:1337:0x90b2c654f18e491a566d6a38c491cf82745e5987`
+ *
+ *       The endpoint will match both formats automatically.
+ *
+ *       ## Use Cases
+ *       - **User dashboards**: Display all research objects for a specific researcher
+ *       - **Profile pages**: Show publication history for an address
+ *       - **Analytics**: Track research output by author/institution
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: |
+ *           Owner address or DID to filter by.
+ *           Examples:
+ *           - Plain address: 0x90b2c654f18e491a566d6a38c491cf82745e5987
+ *           - Full DID: did:pkh:eip155:1337:0x90b2c654f18e491a566d6a38c491cf82745e5987
+ *         example: "0x90b2c654f18e491a566d6a38c491cf82745e5987"
+ *     responses:
+ *       200:
+ *         description: List of research objects owned by the specified address
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/ResearchObject'
+ *             examples:
+ *               success:
+ *                 summary: Successful response with research objects
+ *                 value:
+ *                   - id: "kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *                     owner: "did:pkh:eip155:1337:0x90b2c654f18e491a566d6a38c491cf82745e5987"
+ *                     manifest: "bafkreiasyoawbtjotfckd7yi33t4rxidiqusrwj6g2hb2gsczw35nlt4we"
+ *                     title: "Research Object Title"
+ *                   - id: "kjzl6kcym7w8y8zxcv9io123nmzrprs5ndmcqtugbtnd27kko22fuyev08r9876"
+ *                     owner: "did:pkh:eip155:1337:0x90b2c654f18e491a566d6a38c491cf82745e5987"
+ *                     manifest: "bafkreidfg3awbtjotfckd7yi33t4rxidiqusrwj6g2hb2gsczw35nlt5ab"
+ *                     title: "Another Research Object"
+ *               empty:
+ *                 summary: No research objects found for owner
+ *                 value: []
+ *       400:
+ *         description: Invalid request - missing owner ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *             example:
+ *               error: "invalid request"
+ *               details: "missing owner id in path parameter"
+ *               params: {}
+ *               path: "api/v2/queries/owner"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *             example:
+ *               error: "failed to fetch research objects"
+ *               details: "flight client error"
+ *               params: { id: "0x90b2c654f18e491a566d6a38c491cf82745e5987" }
+ *               path: "api/v2/queries/owner"
+ */
+router.get("/owner/:id?", ownerQueryHandler);
 
 export default router;
