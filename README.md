@@ -42,7 +42,7 @@ npm ci
 npm run test
 
 # Development mode with hot reload
-npm run watch
+npm run dev
 
 # Production build
 npm run build
