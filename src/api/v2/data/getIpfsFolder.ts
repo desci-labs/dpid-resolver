@@ -5,23 +5,29 @@ import parentLogger from "../../../logger.js";
 import { resolveDpid } from "../resolvers/dpid.js";
 import { redisService } from "../../../redis.js";
 import { getManifest } from "../../../util/manifests.js";
+import { httpAgent, httpsAgent } from "../../../util/httpAgent.js";
 
 const logger = parentLogger.child({ module: "/api/v2/data/getIpfsFolder" });
 
 const IPFS_DAG_API_URL = process.env.IPFS_DAG_API_URL ?? "https://ipfs.desci.com/api/v0";
 // Fallback IPFS gateways with DAG API support (if configured)
-const IPFS_DAG_API_FALLBACK_URLS = process.env.IPFS_DAG_API_FALLBACK_URL ? [process.env.IPFS_DAG_API_FALLBACK_URL] : [];
+const IPFS_DAG_API_FALLBACK_URLS = process.env.IPFS_DAG_API_FALLBACK_URL
+    ? process.env.IPFS_DAG_API_FALLBACK_URL.split(",")
+    : ["https://pub.desci.com/api/v0"];
 // Public HTTP gateways for fetching raw content when DAG API is unavailable
 const PUBLIC_IPFS_GATEWAYS = process.env.PUBLIC_IPFS_GATEWAYS
     ? process.env.PUBLIC_IPFS_GATEWAYS.split(",")
-    : ["https://ipfs.io/ipfs", "https://dweb.link/ipfs", "https://cloudflare-ipfs.com/ipfs"];
+    : ["https://pub.desci.com/ipfs", "https://ipfs.io/ipfs", "https://dweb.link/ipfs", "https://cloudflare-ipfs.com/ipfs"];
 const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] => Directory
 
 // Cache key version history:
 // v2: Initial versioned cache key
 // v3: Invalidated to force re-fetch with public gateway fallback for missing files
+// v4: Added public gateway fallback
+// v5: Fixed caching of failed IPFS directory loads - only cache successful complete fetches
+// v6: Added pub.desci.com fallback and fixed download URLs to use actual gateway that fetched files
 const getKeyForIpfsTree = (cid: string, rootName: string, depthKey: string) =>
-    `resolver-v4-${DPID_ENV}-ipfs-tree-${rootName}-${depthKey}-${cid}`;
+    `resolver-v6-${DPID_ENV}-ipfs-tree-${rootName}-${depthKey}-${cid}`;
 
 export type IpfsEntry = {
     name: string;
@@ -46,6 +52,8 @@ const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
                 url,
                 timeout: 15000,
                 validateStatus: (status) => status === 200 || status === 404,
+                httpAgent,
+                httpsAgent,
             });
 
             if (response.status === 200) {
@@ -91,6 +99,8 @@ export const ipfsCat = async (arg: string): Promise<unknown> => {
         headers: {
             "Content-Type": "application/json",
         },
+        httpAgent,
+        httpsAgent,
     });
     return data;
 };
@@ -112,6 +122,8 @@ export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIp
                     method: "POST",
                     url,
                     timeout: 30000, // 30 second timeout
+                    httpAgent,
+                    httpsAgent,
                 });
                 // Log if we had to use a fallback gateway
                 if (gatewayUrl !== IPFS_DAG_API_URL) {
@@ -295,6 +307,7 @@ export const getIpfsFolderTreeByCid = async (
 
     let index = 0;
     const workers: Promise<void>[] = [];
+    let hasErrors = false;
 
     const take = (): QueueItem | undefined => (index < queue.length ? queue[index++] : undefined);
 
@@ -330,6 +343,7 @@ export const getIpfsFolderTreeByCid = async (
                     item.parent.children!.push(fileEntry);
                 }
             } catch (error) {
+                hasErrors = true;
                 const errorTyped = error as {
                     message?: string;
                     response?: { data?: { Message?: string }; status?: number };
@@ -358,10 +372,13 @@ export const getIpfsFolderTreeByCid = async (
     }
     await Promise.all(workers);
 
-    if (redisService) {
+    // Only cache if we successfully fetched all children
+    if (redisService && !hasErrors) {
         void redisService.setToCache(cacheKey, root, CACHE_TTL_ANCHORED).catch((error) => {
             logger.warn({ error, key: cacheKey }, "Failed to set Redis cache for ipfs tree");
         });
+    } else if (hasErrors) {
+        logger.info({ cacheKey, rootCid }, "Skipping cache due to errors fetching some children");
     }
 
     return root;

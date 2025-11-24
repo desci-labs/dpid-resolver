@@ -11,6 +11,7 @@ import type { HistoryQueryResult } from "../queries/history.js";
 import { isDpid, isVersionString } from "../../../util/validation.js";
 import { getIpfsFolderTreeByCid, ipfsCat, type EnhancedIpfsEntry } from "../data/getIpfsFolder.js";
 import { getManifest } from "../../../util/manifests.js";
+import { httpAgent, httpsAgent } from "../../../util/httpAgent.js";
 
 const MODULE_PATH = "/api/v2/resolvers/generic" as const;
 
@@ -305,7 +306,7 @@ export const resolveGenericHandler = async (
 
         try {
             // Let's be optimistic
-            const { data } = await axios({ method: "POST", url: maybeValidDagUrl });
+            const { data } = await axios({ method: "POST", url: maybeValidDagUrl, httpAgent, httpsAgent });
             logger.info({ ipfsData: data }, "IPFS DATA");
 
             // Check for magical UnixFS clues

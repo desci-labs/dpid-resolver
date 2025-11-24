@@ -163,8 +163,7 @@ describe("/api/v2/query", { timeout: 10_000 }, async () => {
                         // Check that each object has the correct owner
                         // Owner can be in format: did:pkh:eip155:1337:0x... or just 0x...
                         const ownerMatches =
-                            obj.owner === testOwnerId ||
-                            obj.owner.toLowerCase().endsWith(testOwnerId.toLowerCase());
+                            obj.owner === testOwnerId || obj.owner.toLowerCase().endsWith(testOwnerId.toLowerCase());
                         expect(ownerMatches).toBe(true);
 
                         // Validate object structure

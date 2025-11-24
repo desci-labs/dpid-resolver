@@ -197,18 +197,29 @@ export async function buildMystPageFromManifest(params: {
             thumbnail_optimized: thumbnailOptimized,
         },
         mdast: { type: "root" },
-        downloads: ij.flatFiles?.map((f: EnhancedIpfsEntry) => ({
-            url:
-                !f.gateway || f.gateway === "public"
-                    ? `https://ipfs.io/ipfs/${f.cid}`
-                    : `https://ipfs.desci.com/ipfs/${f.cid}`,
-            title: f.path,
-            filename: f.name,
-            extra: {
-                size_bytes: f.size,
-                type: f.type,
-            },
-        })),
+        downloads: ij.flatFiles?.map((f: EnhancedIpfsEntry) => {
+            // Use the gateway that successfully fetched the file
+            let gatewayUrl: string;
+            if (!f.gateway || f.gateway === "public") {
+                gatewayUrl = `https://ipfs.io/ipfs/${f.cid}`;
+            } else if (f.gateway.includes("/api/v0")) {
+                // Convert DAG API URL to IPFS gateway URL
+                gatewayUrl = `${f.gateway.replace("/api/v0", "/ipfs")}/${f.cid}`;
+            } else {
+                // Already a gateway URL
+                gatewayUrl = `${f.gateway}/${f.cid}`;
+            }
+
+            return {
+                url: gatewayUrl,
+                title: f.path,
+                filename: f.name,
+                extra: {
+                    size_bytes: f.size,
+                    type: f.type,
+                },
+            };
+        }),
         references: {
             cite: {
                 order: ij.citation_list?.map((c) => c.key) ?? [],
