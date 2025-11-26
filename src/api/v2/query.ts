@@ -705,6 +705,6 @@ router.get("/owner/:id?", ownerQueryHandler);
  *             schema:
  *               $ref: '#/components/schemas/ResearchObjectQueryError'
  */
-router.get("/reverse/:id", reverseLookupHandler);
+router.get("/reverse/:id?", reverseLookupHandler);
 
 export default router;
