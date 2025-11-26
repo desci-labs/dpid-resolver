@@ -37,8 +37,8 @@ const getReverseLookupCacheKey = (streamId: string) => `resolver-${DPID_ENV}-rev
 /**
  * Reverse lookup: given a stream ID, find the corresponding DPID
  *
- * This endpoint iterates through all registered DPIDs to find which one
- * maps to the provided stream ID. Results are cached for performance.
+ * Uses the contract's `find` function for O(1) lookup from the
+ * streamID -> dpid mapping. Results are cached for performance.
  */
 export const reverseLookupHandler = async (
     req: Request<ReverseLookupParams, unknown, unknown>,
@@ -82,75 +82,43 @@ export const reverseLookupHandler = async (
 
         const registry = getDpidAliasRegistry();
 
-        // Get the total number of DPIDs
-        const nextDpidBigNumber = await registry.nextDpid();
-        const nextDpid = nextDpidBigNumber.toNumber();
+        // Use the contract's find function for O(1) reverse lookup
+        // The contract maintains a streamID -> dpid mapping
+        const dpidBigNumber = await registry.find(streamId);
+        const dpid = dpidBigNumber.toNumber();
 
-        if (nextDpid <= 1) {
+        // dpid of 0 means not found (DPIDs start at 1)
+        if (dpid === 0) {
+            logger.info({ streamId }, "no DPID found for stream ID");
             return res.status(404).send({
                 error: "not found",
-                details: "no DPIDs registered in the system",
+                details: `no DPID found for stream ID: ${streamId}`,
                 params: req.params,
                 path: MODULE_PATH,
             });
         }
 
-        // Search through all DPIDs to find the one matching the stream ID
-        // Use batched parallel lookups for better performance
-        const BATCH_SIZE = 50;
-        const totalDpids = nextDpid - 1;
+        logger.info({ streamId, dpid, source: "registry" }, "reverse lookup found DPID");
 
-        for (let batchStart = 1; batchStart <= totalDpids; batchStart += BATCH_SIZE) {
-            const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, totalDpids);
-            const dpidNumbers = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
-
-            const lookupPromises = dpidNumbers.map(async (dpidNumber) => {
-                try {
-                    const registeredStreamId = await registry.registry(dpidNumber);
-                    if (registeredStreamId === streamId) {
-                        return dpidNumber;
-                    }
-                } catch {
-                    // Skip failed lookups
-                }
-                return null;
-            });
-
-            const results = await Promise.all(lookupPromises);
-            const foundDpid = results.find((result) => result !== null);
-
-            if (foundDpid) {
-                logger.info({ streamId, dpid: foundDpid, source: "registry" }, "reverse lookup found DPID");
-
-                // Cache the result for future lookups
-                if (redisService) {
-                    logger.info({ streamId, dpid: foundDpid }, "caching reverse lookup result in redis");
-                    void redisService
-                        .setToCache(getReverseLookupCacheKey(streamId), foundDpid, CACHE_TTL_ANCHORED)
-                        .catch((error) => {
-                            logger.warn({ error, streamId }, "Failed to cache reverse lookup result");
-                        });
-                } else {
-                    logger.info({ streamId, dpid: foundDpid }, "redis not available, skipping cache");
-                }
-
-                return res.send({
-                    dpid: foundDpid,
-                    streamId,
-                    links: {
-                        resolve: `${baseUrl}/api/v2/resolve/dpid/${foundDpid}`,
-                        history: `${baseUrl}/api/v2/query/history/${foundDpid}`,
-                    },
+        // Cache the result for future lookups
+        if (redisService) {
+            logger.info({ streamId, dpid }, "caching reverse lookup result in redis");
+            void redisService
+                .setToCache(getReverseLookupCacheKey(streamId), dpid, CACHE_TTL_ANCHORED)
+                .catch((error) => {
+                    logger.warn({ error, streamId }, "Failed to cache reverse lookup result");
                 });
-            }
+        } else {
+            logger.info({ streamId, dpid }, "redis not available, skipping cache");
         }
 
-        // Stream ID not found in any DPID registration
-        return res.status(404).send({
-            error: "not found",
-            details: `no DPID found for stream ID: ${streamId}`,
-            params: req.params,
-            path: MODULE_PATH,
+        return res.send({
+            dpid,
+            streamId,
+            links: {
+                resolve: `${baseUrl}/api/v2/resolve/dpid/${dpid}`,
+                history: `${baseUrl}/api/v2/query/history/${dpid}`,
+            },
         });
     } catch (error) {
         logger.error(error, "Error in reverse lookup handler");
@@ -162,4 +130,3 @@ export const reverseLookupHandler = async (
         });
     }
 };
-
