@@ -3,6 +3,7 @@ import { objectQueryHandler } from "./queries/objects.js";
 import { historyQueryHandler } from "./queries/history.js";
 import { dpidListHandler } from "./queries/dpids.js";
 import { ownerQueryHandler } from "./queries/owner.js";
+import { reverseLookupHandler } from "./queries/reverseLookup.js";
 
 const router = Router();
 
@@ -611,5 +612,99 @@ router.get("/dpids", dpidListHandler);
  *               path: "api/v2/queries/owner"
  */
 router.get("/owner/:id?", ownerQueryHandler);
+
+/**
+ * @swagger
+ * /v2/query/reverse/{id}:
+ *   get:
+ *     tags:
+ *       - Query
+ *     summary: Reverse lookup - find DPID by stream ID
+ *     description: |
+ *       Perform a reverse lookup to find the DPID associated with a given stream ID.
+ *       This is useful when you have a Ceramic stream ID and need to find its corresponding DPID.
+ *
+ *       ## How It Works
+ *       The endpoint searches through all registered DPIDs to find which one maps to the
+ *       provided stream ID. Results are cached for improved performance on subsequent lookups.
+ *
+ *       ## Use Cases
+ *       - **External integrations**: Map Ceramic stream IDs back to DPIDs
+ *       - **Data reconciliation**: Verify DPID-to-stream mappings
+ *       - **Cross-referencing**: Find DPID when only stream ID is known
+ *
+ *       ## Performance Note
+ *       Initial lookups may take longer as the endpoint searches through all DPIDs.
+ *       Subsequent lookups for the same stream ID are served from cache.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: |
+ *           The Ceramic stream ID to look up.
+ *           Example: kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682
+ *         example: "kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *     responses:
+ *       200:
+ *         description: DPID found for the provided stream ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 dpid:
+ *                   type: integer
+ *                   description: The DPID number associated with this stream ID
+ *                 streamId:
+ *                   type: string
+ *                   description: The stream ID that was looked up
+ *                 links:
+ *                   type: object
+ *                   properties:
+ *                     resolve:
+ *                       type: string
+ *                       description: URL to resolve this DPID
+ *                     history:
+ *                       type: string
+ *                       description: URL to get version history for this DPID
+ *             example:
+ *               dpid: 46
+ *               streamId: "kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *               links:
+ *                 resolve: "http://localhost:5461/api/v2/resolve/dpid/46"
+ *                 history: "http://localhost:5461/api/v2/query/history/46"
+ *       400:
+ *         description: Invalid request - missing stream ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *             example:
+ *               error: "invalid request"
+ *               details: "missing stream ID in path parameter"
+ *               params: {}
+ *               path: "api/v2/queries/reverseLookup"
+ *       404:
+ *         description: No DPID found for the provided stream ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *             example:
+ *               error: "not found"
+ *               details: "no DPID found for stream ID: kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *               params:
+ *                 id: "kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *               path: "api/v2/queries/reverseLookup"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ */
+router.get("/reverse/:id?", reverseLookupHandler);
 
 export default router;
