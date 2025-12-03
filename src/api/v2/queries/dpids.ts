@@ -1,9 +1,8 @@
 import type { Request, Response } from "express";
-import { getDpidAliasRegistry, getCeramicClient } from "../../../util/config.js";
+import { dpidAliasRegistry, getCeramicClient } from "../../../util/config.js";
 import parentLogger from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
 import { getCodexHistory } from "../queries/history.js";
-import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
 import { streams } from "@desci-labs/desci-codex-lib";
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
@@ -257,7 +256,6 @@ export type DpidListQueryParams = {
  */
 const getLightweightDpidInfo = async (
     dpidNumber: number,
-    registry: DpidAliasRegistry,
     includeHistory: boolean = false,
     includeMetadata: boolean = false,
     metadataFields: string[] = ["title", "authors"],
@@ -266,7 +264,7 @@ const getLightweightDpidInfo = async (
     try {
         // First check if it has a Ceramic streamId
         const registryStart = Date.now();
-        const streamId = await registry.registry(dpidNumber);
+        const streamId = await dpidAliasRegistry.registry(dpidNumber);
         const registryTime = Date.now() - registryStart;
 
         if (streamId && streamId !== "") {
@@ -407,7 +405,7 @@ const getLightweightDpidInfo = async (
             // Legacy DPID - get from contract
             try {
                 const legacyStart = Date.now();
-                const legacyEntry = await registry.legacyLookup(dpidNumber);
+                const legacyEntry = await dpidAliasRegistry.legacyLookup(dpidNumber);
                 const legacyTime = Date.now() - legacyStart;
 
                 const owner = legacyEntry[0];
@@ -521,10 +519,8 @@ export const dpidListHandler = async (
     });
 
     try {
-        const registry = getDpidAliasRegistry();
-
         // Step 1: Get total DPID count (fast contract call)
-        const nextDpidBigNumber = await registry.nextDpid();
+        const nextDpidBigNumber = await dpidAliasRegistry.nextDpid();
         const nextDpid = nextDpidBigNumber.toNumber();
         const totalDpids = Math.max(0, nextDpid - 1);
 
@@ -629,7 +625,7 @@ export const dpidListHandler = async (
         logger.info({ dpidCount: dpidNumbers.length }, "Fetching lightweight DPID info in parallel");
 
         const dpidPromises = dpidNumbers.map((dpidNumber) =>
-            getLightweightDpidInfo(dpidNumber, registry, includeHistory, includeMetadata, metadataFields),
+            getLightweightDpidInfo(dpidNumber, includeHistory, includeMetadata, metadataFields),
         );
 
         const dpidInfos = await Promise.all(dpidPromises);

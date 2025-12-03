@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { CACHE_TTL_ANCHORED, DPID_ENV, getDpidAliasRegistry } from "../../../util/config.js";
+import { CACHE_TTL_ANCHORED, DPID_ENV, dpidAliasRegistry } from "../../../util/config.js";
 import parentLogger from "../../../logger.js";
 import { redisService } from "../../../redis.js";
 
@@ -83,11 +83,9 @@ export const reverseLookupHandler = async (
             logger.info({ streamId }, "redis service not available, skipping cache");
         }
 
-        const registry = getDpidAliasRegistry();
-
         // Use the contract's find function for O(1) reverse lookup
         // The contract maintains a streamID -> dpid mapping
-        const dpidBigNumber = await registry.find(streamId);
+        const dpidBigNumber = await dpidAliasRegistry.find(streamId);
         const dpid = dpidBigNumber.toNumber();
 
         // dpid of 0 means not found (DPIDs start at 1)

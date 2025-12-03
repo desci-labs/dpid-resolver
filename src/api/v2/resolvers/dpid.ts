@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import parentLogger from "../../../logger.js";
-import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, getDpidAliasRegistry } from "../../../util/config.js";
+import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, dpidAliasRegistry } from "../../../util/config.js";
 import { ResolverError } from "../../../errors.js";
 import { getCodexHistory, type HistoryQueryResult, type HistoryVersion } from "../queries/history.js";
 import { redisService } from "../../../redis.js";
@@ -127,7 +127,6 @@ const getKeyForLegacyEntry = (dpid: number) => `resolver-${DPID_ENV}-legacy-${dp
  * @throws (@link DpidResolverError) on failure
  */
 export const resolveDpid = async (dpid: number, versionIx?: number): Promise<HistoryQueryResult> => {
-    const registry = getDpidAliasRegistry();
     const streamCacheKey = getKeyForDpid(dpid);
 
     /** Empty string if dpid unmapped in registry */
@@ -137,7 +136,7 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
         if (redisService) {
             const cachedStream = await redisService.getFromCache<string>(streamCacheKey);
             if (cachedStream === null) {
-                resolvedStream = await registry.resolve(dpid);
+                resolvedStream = await dpidAliasRegistry.resolve(dpid);
                 // Skip caching if dpid is unset to avoid resolution delay after publish
                 if (resolvedStream.length) {
                     void redisService.setToCache(streamCacheKey, resolvedStream, CACHE_TTL_ANCHORED);
@@ -146,7 +145,7 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
                 resolvedStream = cachedStream;
             }
         } else {
-            resolvedStream = await registry.resolve(dpid);
+            resolvedStream = await dpidAliasRegistry.resolve(dpid);
         }
         streamId = resolvedStream;
     } catch (e) {
@@ -204,7 +203,7 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
         if (redisService) {
             const fromCache = await redisService.getFromCache<string>(legacyHistoryCacheKey);
             if (fromCache === null) {
-                resolvedEntry = await registry.legacyLookup(dpid);
+                resolvedEntry = await dpidAliasRegistry.legacyLookup(dpid);
                 if (resolvedEntry.owner.length) {
                     const asString = JSON.stringify(resolvedEntry);
                     // We know this leads to a legacy entry, could probably cache it for longer.
@@ -224,7 +223,7 @@ export const resolveDpid = async (dpid: number, versionIx?: number): Promise<His
                 });
             }
         } else {
-            resolvedEntry = await registry.legacyLookup(dpid);
+            resolvedEntry = await dpidAliasRegistry.legacyLookup(dpid);
         }
 
         const owner = resolvedEntry[0];

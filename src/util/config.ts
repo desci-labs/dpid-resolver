@@ -42,8 +42,20 @@ const getAliasRegistryAddress = (): string => {
     }
 };
 
-export const getDpidAliasRegistry = () =>
-    tc.DpidAliasRegistry__factory.connect(getAliasRegistryAddress(), getOptimismProvider());
+/**
+ * Shared instance of the DPID Alias Registry contract.
+ * Initialized once at module load to avoid per-request connection overhead.
+ */
+export const dpidAliasRegistry = tc.DpidAliasRegistry__factory.connect(
+    getAliasRegistryAddress(),
+    getOptimismProvider(),
+);
+
+/**
+ * @deprecated Use the shared `dpidAliasRegistry` instance directly instead.
+ * This function exists for backward compatibility but returns the same singleton.
+ */
+export const getDpidAliasRegistry = () => dpidAliasRegistry;
 
 export const getNodesUrl = () => {
     switch (DPID_ENV) {
