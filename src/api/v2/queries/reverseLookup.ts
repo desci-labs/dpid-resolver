@@ -66,6 +66,9 @@ export const reverseLookupHandler = async (
             const cachedDpid = await redisService.getFromCache<number>(getReverseLookupCacheKey(streamId));
             if (cachedDpid !== null) {
                 logger.info({ streamId, dpid: cachedDpid, source: "cache" }, "reverse lookup cache hit");
+                void redisService.keyBump(getReverseLookupCacheKey(streamId), CACHE_TTL_ANCHORED).catch((error) => {
+                    logger.warn({ error, streamId }, "Failed to bump reverse lookup cache TTL");
+                });
                 return res.send({
                     dpid: cachedDpid,
                     streamId,
