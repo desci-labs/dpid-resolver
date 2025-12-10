@@ -212,61 +212,24 @@ describe("/api/v2/query", { timeout: 10_000 }, async () => {
             { streamId: "kjzl6kcym7w8y4xc7wkce7iseqnpps33o3cx70zq7txqofaxkqkfw8bjsceh6nd", dpid: 786 },
         ];
 
-        it("should return DPID for valid stream ID (574)", async () => {
-            const { streamId, dpid } = testCases[0];
-            await request(app)
-                .get(`/api/v2/query/reverse/${streamId}`)
-                .expect(200)
-                .expect((res: TestResponse) => {
-                    expect(res.body).toEqual(
-                        expect.objectContaining({
-                            dpid,
-                            streamId,
-                            links: expect.objectContaining({
-                                resolve: expect.stringContaining(`/api/v2/resolve/dpid/${dpid}`),
-                                history: expect.stringContaining(`/api/v2/query/history/${dpid}`),
+        it("should return correct DPID for all valid stream IDs", async () => {
+            for (const { streamId, dpid } of testCases) {
+                await request(app)
+                    .get(`/api/v2/query/reverse/${streamId}`)
+                    .expect(200)
+                    .expect((res: TestResponse) => {
+                        expect(res.body).toEqual(
+                            expect.objectContaining({
+                                dpid,
+                                streamId,
+                                links: expect.objectContaining({
+                                    resolve: expect.stringContaining(`/api/v2/resolve/dpid/${dpid}`),
+                                    history: expect.stringContaining(`/api/v2/query/history/${dpid}`),
+                                }),
                             }),
-                        }),
-                    );
-                });
-        });
-
-        it("should return DPID for valid stream ID (989)", async () => {
-            const { streamId, dpid } = testCases[1];
-            await request(app)
-                .get(`/api/v2/query/reverse/${streamId}`)
-                .expect(200)
-                .expect((res: TestResponse) => {
-                    expect(res.body).toEqual(
-                        expect.objectContaining({
-                            dpid,
-                            streamId,
-                            links: expect.objectContaining({
-                                resolve: expect.stringContaining(`/api/v2/resolve/dpid/${dpid}`),
-                                history: expect.stringContaining(`/api/v2/query/history/${dpid}`),
-                            }),
-                        }),
-                    );
-                });
-        });
-
-        it("should return DPID for valid stream ID (786)", async () => {
-            const { streamId, dpid } = testCases[2];
-            await request(app)
-                .get(`/api/v2/query/reverse/${streamId}`)
-                .expect(200)
-                .expect((res: TestResponse) => {
-                    expect(res.body).toEqual(
-                        expect.objectContaining({
-                            dpid,
-                            streamId,
-                            links: expect.objectContaining({
-                                resolve: expect.stringContaining(`/api/v2/resolve/dpid/${dpid}`),
-                                history: expect.stringContaining(`/api/v2/query/history/${dpid}`),
-                            }),
-                        }),
-                    );
-                });
+                        );
+                    });
+            }
         });
 
         it("should return 404 for non-existent stream ID", async () => {

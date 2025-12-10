@@ -633,8 +633,6 @@ router.get("/owner/:id?", ownerQueryHandler);
  *       - **Data reconciliation**: Verify DPID-to-stream mappings
  *       - **Cross-referencing**: Find DPID when only stream ID is known
  *
- *       ## Performance Note
- *       Initial lookups may take longer as the endpoint searches through all DPIDs.
  *       Subsequent lookups for the same stream ID are served from cache.
  *     parameters:
  *       - in: path

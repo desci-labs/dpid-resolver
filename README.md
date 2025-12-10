@@ -50,7 +50,47 @@ npm run start
 
 # Code formatting and linting
 npm run tidy
+
 ```
+
+## Redis Setup (Optional but Recommended)
+
+This project supports caching using Redis to improve response times and reduce load on the underlying data sources. If you want to enable Redis caching, follow these steps to set up a local Redis container using Docker:
+
+1. **Start a Redis Container**
+
+    Run the following command to start a Redis server in detached mode:
+
+    ```bash
+    docker run -d --name dpid-redis -p 6379:6379 redis:alpine
+    ```
+
+2. **Check if Redis is Running**
+
+    Verify that the container is up and running:
+
+    ```bash
+    docker ps | grep dpid-redis
+    ```
+
+    You should see `dpid-redis` in the list of running containers.
+
+3. **Test the Redis Connection**
+
+    Make sure Redis responds to commands:
+
+    ```bash
+    docker exec dpid-redis redis-cli ping
+    ```
+
+    You should see the response:
+
+    ```
+    PONG
+    ```
+
+> **Note:**  
+> If you are deploying to production or want to use an external Redis provider, make sure to configure the `REDIS_*` options in your `.env` file as described above.
 
 ## API Documentation
 
