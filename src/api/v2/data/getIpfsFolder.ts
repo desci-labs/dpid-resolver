@@ -17,7 +17,12 @@ const IPFS_DAG_API_FALLBACK_URLS = process.env.IPFS_DAG_API_FALLBACK_URL
 // Public HTTP gateways for fetching raw content when DAG API is unavailable
 const PUBLIC_IPFS_GATEWAYS = process.env.PUBLIC_IPFS_GATEWAYS
     ? process.env.PUBLIC_IPFS_GATEWAYS.split(",")
-    : ["https://pub.desci.com/ipfs", "https://ipfs.io/ipfs", "https://dweb.link/ipfs", "https://cloudflare-ipfs.com/ipfs"];
+    : [
+          "https://pub.desci.com/ipfs",
+          "https://ipfs.io/ipfs",
+          "https://dweb.link/ipfs",
+          "https://cloudflare-ipfs.com/ipfs",
+      ];
 const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] => Directory
 
 // Cache key version history:
@@ -96,13 +101,19 @@ export const ipfsCat = async (arg: string): Promise<unknown> => {
     const { data } = await axios({
         method: "GET",
         url,
-        headers: {
-            "Content-Type": "application/json",
-        },
+        responseType: "text",
+        transformResponse: [(data) => data], // Prevent axios from auto-parsing
         httpAgent,
         httpsAgent,
     });
-    return data;
+
+    // Attempt to parse as JSON, throw descriptive error if it fails
+    try {
+        return JSON.parse(data);
+    } catch (e) {
+        const preview = typeof data === "string" ? data.slice(0, 100) : String(data);
+        throw new Error(`ipfsCat: expected JSON response but got: "${preview}..."`);
+    }
 };
 
 export type EnhancedIpfsEntry = IpfsEntry & { gateway?: string; cid: string; name: string };
