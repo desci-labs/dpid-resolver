@@ -1,4 +1,5 @@
 import "dotenv/config";
+import * as Sentry from "@sentry/node";
 import express, { type Express, type Request } from "express";
 import api from "./api/index.js";
 import logger from "./logger.js";
@@ -13,6 +14,17 @@ import { specs } from "./swagger.js";
 import { maybeInitializeRedis } from "./redis.js";
 import { maybeInitializeFlightClient } from "./flight.js";
 import { setupProcessHandlers } from "./process.js";
+
+// Initialize Sentry before anything else
+if (process.env.SENTRY_DSN) {
+    Sentry.init({
+        dsn: process.env.SENTRY_DSN,
+        environment: process.env.DPID_ENV || "development",
+        tracesSampleRate: 0.1,
+    });
+    logger.info("Sentry initialized");
+}
+
 export const app: Express = express();
 const port = process.env.PORT || 5460;
 
@@ -75,6 +87,9 @@ app.use("/api", api);
 app.get("/*", (req, res) =>
     resolveGenericHandler(req as Request<ResolveGenericParams, unknown, undefined, ResolveGenericQueryParams>, res),
 );
+
+// Sentry error handler must be after all routes
+Sentry.setupExpressErrorHandler(app);
 
 app.listen(port, () => {
     logger.info(`⚡️[server]: Server is running at http://localhost:${port}`);

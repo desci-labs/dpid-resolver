@@ -46,6 +46,7 @@
         "@desci-labs/desci-codex-lib": "^2.0.0-rc5",
         "@desci-labs/desci-contracts": "^0.2.7",
         "@desci-labs/desci-models": "^0.2.25-rc1",
+        "@sentry/node": "^10.29.0",
         "@supabase/supabase-js": "^2.43.5",
         "axios": "^1.7.2",
         "dotenv": "^16.4.5",

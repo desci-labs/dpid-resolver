@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import axios from "axios";
+import * as Sentry from "@sentry/node";
 import { RoCrateTransformer, type ResearchObjectV1, MystTransformer } from "@desci-labs/desci-models";
 
 import parentLogger, { serializeError } from "../../../logger.js";
@@ -117,17 +118,27 @@ export const resolveGenericHandler = async (
         logger.warn({ path, query }, "got request for jsonld");
         const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
 
-        // console.log({ resolveResult });
-
         const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
 
         const transformer = new RoCrateTransformer();
 
         const response = await fetch(manifestUrl);
 
-        // console.log({ manifestUrl });
+        let manifest;
+        try {
+            const text = await response.text();
+            manifest = JSON.parse(text);
+        } catch (e) {
+            logger.error({ manifestUrl, error: e }, "Failed to parse manifest JSON for jsonld");
+            Sentry.captureException(e, { extra: { manifestUrl, path, format: "jsonld" } });
+            return res.status(502).send({
+                error: "Failed to parse manifest from IPFS gateway",
+                details: "The IPFS gateway returned invalid JSON",
+                ...baseError,
+            });
+        }
 
-        const roCrate = transformer.exportObject(await response.json());
+        const roCrate = transformer.exportObject(manifest);
 
         return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
     }
@@ -140,9 +151,23 @@ export const resolveGenericHandler = async (
 
         const response = await fetch(manifestUrl);
 
+        let manifest;
+        try {
+            const text = await response.text();
+            manifest = JSON.parse(text);
+        } catch (e) {
+            logger.error({ manifestUrl, error: e }, "Failed to parse manifest JSON for myst");
+            Sentry.captureException(e, { extra: { manifestUrl, path, format: "myst" } });
+            return res.status(502).send({
+                error: "Failed to parse manifest from IPFS gateway",
+                details: "The IPFS gateway returned invalid JSON",
+                ...baseError,
+            });
+        }
+
         const transformer = new MystTransformer();
 
-        const mystOutput = transformer.exportObject(JSON.parse(await response.text()));
+        const mystOutput = transformer.exportObject(manifest);
 
         return res.setHeader("Content-Type", "text/myst").send(mystOutput);
     }
@@ -220,7 +245,20 @@ export const resolveGenericHandler = async (
     } else if (suffix.startsWith("root") || suffix.startsWith("data")) {
         logger.info({ dpid, path, query, suffix }, "assuming suffix is a drive path");
         // The suffix is pointing to a target in drive, let's find the UnixFS root
-        const manifest = (await fetch(manifestUrl).then(async (r) => await r.json())) as ResearchObjectV1;
+        let manifest: ResearchObjectV1;
+        try {
+            const response = await fetch(manifestUrl);
+            const text = await response.text();
+            manifest = JSON.parse(text) as ResearchObjectV1;
+        } catch (e) {
+            logger.error({ manifestUrl, error: e }, "Failed to parse manifest JSON for drive path");
+            Sentry.captureException(e, { extra: { manifestUrl, path, suffix } });
+            return res.status(502).send({
+                error: "Failed to parse manifest from IPFS gateway",
+                details: "The IPFS gateway returned invalid JSON",
+                ...baseError,
+            });
+        }
         const maybeDataBucket = manifest.components.find((c) => c.name === "root");
         // || manifest.components[0] shouldn't be necessary?
 
