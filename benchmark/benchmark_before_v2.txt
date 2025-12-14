@@ -1,0 +1,234 @@
+
+🚀🚀🚀 DPID Resolver Performance Benchmark 🚀🚀🚀
+
+Git Commit: e2ccc2d
+Base URL: http://localhost:5460
+Timestamp: 2025-12-05T13:16:19.424Z
+Server health: OK ✅
+
+
+📊 Running Sequential Benchmarks (10 iterations each)...
+
+  Testing: /api/v2/resolve/dpid/46... done (avg: 1752.17ms)
+  Testing: /api/v2/resolve/dpid/100... done (avg: 1743.18ms)
+  Testing: /api/v2/resolve/dpid/150... done (avg: 1759.45ms)
+  Testing: /api/v2/query/reverse/kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95... done (avg: 1028.77ms)
+  Testing: /api/v2/query/objects... done (avg: 1964.75ms)
+
+================================================================================
+SEQUENTIAL BENCHMARK RESULTS
+================================================================================
+
+Endpoint: /api/v2/resolve/dpid/46
+  Iterations:  10
+  Total Time:  17521.72ms
+  Avg Time:    1752.17ms
+  Min Time:    1725.99ms
+  Max Time:    1780.62ms
+  P50 Time:    1750.92ms
+  P95 Time:    1780.62ms
+
+Endpoint: /api/v2/resolve/dpid/100
+  Iterations:  10
+  Total Time:  17431.84ms
+  Avg Time:    1743.18ms
+  Min Time:    1716.35ms
+  Max Time:    1801.97ms
+  P50 Time:    1731.14ms
+  P95 Time:    1801.97ms
+
+Endpoint: /api/v2/resolve/dpid/150
+  Iterations:  10
+  Total Time:  17594.55ms
+  Avg Time:    1759.45ms
+  Min Time:    1698.39ms
+  Max Time:    1925.66ms
+  P50 Time:    1716.33ms
+  P95 Time:    1925.66ms
+
+Endpoint: /api/v2/query/reverse/kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols
+  Iterations:  10
+  Total Time:  10287.67ms
+  Avg Time:    1028.77ms
+  Min Time:    1016.84ms
+  Max Time:    1036.63ms
+  P50 Time:    1029.37ms
+  P95 Time:    1036.63ms
+
+Endpoint: /api/v2/query/objects
+  Iterations:  10
+  Total Time:  19647.55ms
+  Avg Time:    1964.75ms
+  Min Time:    1836.32ms
+  Max Time:    2207.09ms
+  P50 Time:    1884.03ms
+  P95 Time:    2207.09ms
+
+
+📊 Running Concurrent Benchmarks (10 concurrent requests x 2 rounds)...
+
+  Testing: /api/v2/resolve/dpid/46... done (total: 45398.27ms)
+  Testing: /api/v2/resolve/dpid/100... done (total: 2972.46ms)
+  Testing: /api/v2/resolve/dpid/150... done (total: 2566.32ms)
+  Testing: /api/v2/query/reverse/kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95... done (total: 1149.15ms)
+  Testing: /api/v2/query/objects... done (total: 19493.23ms)
+
+================================================================================
+CONCURRENT BENCHMARK RESULTS (averaged over 2 rounds)
+================================================================================
+
+Endpoint: /api/v2/resolve/dpid/46
+  Iterations:  10
+  Total Time:  45398.27ms
+  Avg Time:    6516.03ms
+  Min Time:    1740.33ms
+  Max Time:    88354.76ms
+  P50 Time:    2228.82ms
+  P95 Time:    45398.04ms
+
+Endpoint: /api/v2/resolve/dpid/100
+  Iterations:  10
+  Total Time:  2972.46ms
+  Avg Time:    2483.47ms
+  Min Time:    1707.45ms
+  Max Time:    3524.65ms
+  P50 Time:    2396.46ms
+  P95 Time:    2969.85ms
+
+Endpoint: /api/v2/resolve/dpid/150
+  Iterations:  10
+  Total Time:  2566.32ms
+  Avg Time:    2133.64ms
+  Min Time:    1712.17ms
+  Max Time:    2621.14ms
+  P50 Time:    2132.30ms
+  P95 Time:    2563.53ms
+
+Endpoint: /api/v2/query/reverse/kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols
+  Iterations:  10
+  Total Time:  1149.15ms
+  Avg Time:    1100.46ms
+  Min Time:    1013.68ms
+  Max Time:    1157.82ms
+  P50 Time:    1092.03ms
+  P95 Time:    1147.31ms
+
+Endpoint: /api/v2/query/objects
+  Iterations:  10
+  Total Time:  19493.23ms
+  Avg Time:    10823.82ms
+  Min Time:    1867.69ms
+  Max Time:    19911.44ms
+  P50 Time:    9892.28ms
+  P95 Time:    19492.13ms
+
+================================================================================
+SUMMARY
+================================================================================
+
+Sequential Performance:
+  Overall Avg:  1649.67ms
+  Overall P50:  1622.36ms
+  Overall P95:  1750.40ms
+
+Concurrent Performance:
+  Total Time:   71579.42ms
+  Overall Avg:  4611.48ms
+
+
+📋 JSON Output for Comparison:
+{
+  "gitCommit": "e2ccc2d",
+  "timestamp": "2025-12-05T13:21:22.379Z",
+  "sequential": {
+    "avgAcrossEndpoints": 1649.6665116600002,
+    "p50AcrossEndpoints": 1622.358941799998,
+    "p95AcrossEndpoints": 1750.3951082000008,
+    "results": [
+      {
+        "endpoint": "/api/v2/resolve/dpid/46",
+        "avgTime": 1752.17,
+        "minTime": 1725.99,
+        "maxTime": 1780.62,
+        "p50Time": 1750.92,
+        "p95Time": 1780.62
+      },
+      {
+        "endpoint": "/api/v2/resolve/dpid/100",
+        "avgTime": 1743.18,
+        "minTime": 1716.35,
+        "maxTime": 1801.97,
+        "p50Time": 1731.14,
+        "p95Time": 1801.97
+      },
+      {
+        "endpoint": "/api/v2/resolve/dpid/150",
+        "avgTime": 1759.45,
+        "minTime": 1698.39,
+        "maxTime": 1925.66,
+        "p50Time": 1716.33,
+        "p95Time": 1925.66
+      },
+      {
+        "endpoint": "/api/v2/query/reverse/kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols",
+        "avgTime": 1028.77,
+        "minTime": 1016.84,
+        "maxTime": 1036.63,
+        "p50Time": 1029.37,
+        "p95Time": 1036.63
+      },
+      {
+        "endpoint": "/api/v2/query/objects",
+        "avgTime": 1964.75,
+        "minTime": 1836.32,
+        "maxTime": 2207.09,
+        "p50Time": 1884.03,
+        "p95Time": 2207.09
+      }
+    ]
+  },
+  "concurrent": {
+    "totalTime": 71579.42,
+    "avgPerRequest": 4611.48,
+    "results": [
+      {
+        "endpoint": "/api/v2/resolve/dpid/46",
+        "totalTime": 45398.27,
+        "avgTime": 6516.03,
+        "p50Time": 2228.82,
+        "p95Time": 45398.04
+      },
+      {
+        "endpoint": "/api/v2/resolve/dpid/100",
+        "totalTime": 2972.46,
+        "avgTime": 2483.47,
+        "p50Time": 2396.46,
+        "p95Time": 2969.85
+      },
+      {
+        "endpoint": "/api/v2/resolve/dpid/150",
+        "totalTime": 2566.32,
+        "avgTime": 2133.64,
+        "p50Time": 2132.3,
+        "p95Time": 2563.53
+      },
+      {
+        "endpoint": "/api/v2/query/reverse/kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols",
+        "totalTime": 1149.15,
+        "avgTime": 1100.46,
+        "p50Time": 1092.03,
+        "p95Time": 1147.31
+      },
+      {
+        "endpoint": "/api/v2/query/objects",
+        "totalTime": 19493.23,
+        "avgTime": 10823.82,
+        "p50Time": 9892.28,
+        "p95Time": 19492.13
+      }
+    ]
+  }
+}
+
+✅ Benchmark Complete
+
