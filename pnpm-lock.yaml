@@ -15,8 +15,8 @@ importers:
         specifier: ^0.2.7
         version: 0.2.7
       '@desci-labs/desci-models':
-        specifier: file:../nodes/desci-models
-        version: file:../nodes/desci-models(web-streams-polyfill@3.3.3)
+        specifier: ^0.2.29-rc1
+        version: 0.2.29-rc1(web-streams-polyfill@3.3.3)
       '@sentry/node':
         specifier: ^10.22.0
         version: 10.30.0
@@ -385,8 +385,8 @@ packages:
   '@desci-labs/desci-contracts@0.2.7':
     resolution: {integrity: sha512-T5XhH0qn7z93jb9MlGd68i4mf0tJP+ppfyWKfFBjp+dCUC4GeTMM3Z/6eqaD8QXsBpvRfi+cvb0or3BY47MR2A==}
 
-  '@desci-labs/desci-models@file:../nodes/desci-models':
-    resolution: {directory: ../nodes/desci-models, type: directory}
+  '@desci-labs/desci-models@0.2.29-rc1':
+    resolution: {integrity: sha512-VPYK80vi/hsrIN9BCIkHRSY/A/4Da50n9KE2Tkieafe++29aTruMuRkKFTfTsAHCc7ImwwlsW3JORWPcgUkPQg==}
 
   '@didtools/cacao@2.1.0':
     resolution: {integrity: sha512-35gopj+mOmAlA3nHoHiYMvNMXJtbJDJnVpIlCf/Wf/+/x+uG9aIQefXfF35D6JuaTCZ0apabjpT2umL5h3EXcw==}
@@ -5807,7 +5807,7 @@ snapshots:
 
   '@desci-labs/desci-contracts@0.2.7': {}
 
-  '@desci-labs/desci-models@file:../nodes/desci-models(web-streams-polyfill@3.3.3)':
+  '@desci-labs/desci-models@0.2.29-rc1(web-streams-polyfill@3.3.3)':
     dependencies:
       jsonld: 8.3.3(web-streams-polyfill@3.3.3)
       schema-dts: 1.1.5
