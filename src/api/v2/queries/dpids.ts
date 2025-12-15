@@ -10,17 +10,20 @@ const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 /** Timeout for individual DPID lookups in milliseconds (3 seconds) */
 const DPID_LOOKUP_TIMEOUT_MS = 3_000;
 
+/** Result wrapper that distinguishes timeouts from other failures */
+type TimeoutResult<T> = { result: T; timedOut: false } | { result: null; timedOut: true };
+
 /**
- * Wraps a promise with a timeout. If the promise doesn't resolve within the timeout,
- * it returns null instead of blocking indefinitely.
+ * Wraps a promise with a timeout. Returns a wrapper object that distinguishes
+ * between timeouts and other null results from the underlying promise.
  */
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<T | null> => {
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<TimeoutResult<T>> => {
     return Promise.race([
-        promise,
-        new Promise<null>((resolve) => {
+        promise.then((result) => ({ result, timedOut: false as const })),
+        new Promise<TimeoutResult<T>>((resolve) => {
             setTimeout(() => {
                 logger.warn({ dpidNumber, timeoutMs }, "DPID lookup timed out, skipping this dpid to avoid blocking the batch");
-                resolve(null);
+                resolve({ result: null, timedOut: true });
             }, timeoutMs);
         }),
     ]);
@@ -697,27 +700,32 @@ export const dpidListHandler = async (
             ),
         );
 
-        const dpidInfos = await Promise.all(dpidPromises);
+        const wrappedResults = await Promise.all(dpidPromises);
         const batchTime = Date.now() - batchStart;
 
-        // Count how many dpids timed out
-        const timedOutCount = dpidInfos.filter((info) => info === null).length;
-        const successCount = dpidInfos.filter((info) => info !== null).length;
+        // Count timeouts vs other failures accurately
+        const timedOutCount = wrappedResults.filter((r) => r.timedOut).length;
+        const successCount = wrappedResults.filter((r) => !r.timedOut && r.result !== null).length;
+        const failedCount = wrappedResults.filter((r) => !r.timedOut && r.result === null).length;
 
         logger.info(
             {
                 dpidCount: dpidNumbers.length,
                 successCount,
                 timedOutCount,
+                failedCount,
                 batchTime,
                 avgTimePerDpid: Math.round(batchTime / dpidNumbers.length),
             },
             "Batch DPID lookup completed",
         );
 
-        // Step 5: Transform to API format
+        // Step 5: Transform to API format - extract successful results
+        const dpidInfos = wrappedResults
+            .filter((r) => !r.timedOut && r.result !== null)
+            .map((r) => r.result!);
+
         const resolvedDpids = dpidInfos
-            .filter((info): info is NonNullable<typeof info> => info !== null)
             .map((info) => {
                 // Normalize latestTimestamp: ensure undefined/null becomes undefined
                 const latestTimestamp = info.latestTimestamp ?? undefined;
