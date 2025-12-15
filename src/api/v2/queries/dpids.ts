@@ -16,17 +16,30 @@ type TimeoutResult<T> = { result: T; timedOut: false } | { result: null; timedOu
 /**
  * Wraps a promise with a timeout. Returns a wrapper object that distinguishes
  * between timeouts and other null results from the underlying promise.
+ * The timeout is properly cleaned up when the main promise resolves to prevent
+ * spurious warning logs.
  */
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<TimeoutResult<T>> => {
-    return Promise.race([
-        promise.then((result) => ({ result, timedOut: false as const })),
-        new Promise<TimeoutResult<T>>((resolve) => {
-            setTimeout(() => {
-                logger.warn({ dpidNumber, timeoutMs }, "DPID lookup timed out, skipping this dpid to avoid blocking the batch");
-                resolve({ result: null, timedOut: true });
-            }, timeoutMs);
-        }),
-    ]);
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    let didTimeout = false;
+
+    const timeoutPromise = new Promise<TimeoutResult<T>>((resolve) => {
+        timeoutHandle = setTimeout(() => {
+            didTimeout = true;
+            logger.warn({ dpidNumber, timeoutMs }, "DPID lookup timed out, skipping this dpid to avoid blocking the batch");
+            resolve({ result: null, timedOut: true });
+        }, timeoutMs);
+    });
+
+    const wrappedPromise = promise.then((result) => {
+        // Clear timeout if promise resolved before timeout fired
+        if (timeoutHandle && !didTimeout) {
+            clearTimeout(timeoutHandle);
+        }
+        return { result, timedOut: false as const };
+    });
+
+    return Promise.race([wrappedPromise, timeoutPromise]);
 };
 
 /**
