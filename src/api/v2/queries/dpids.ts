@@ -7,6 +7,41 @@ import { streams } from "@desci-labs/desci-codex-lib";
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 
+/** Timeout for individual DPID lookups in milliseconds (3 seconds) */
+const DPID_LOOKUP_TIMEOUT_MS = 3_000;
+
+/** Result wrapper that distinguishes timeouts from other failures */
+type TimeoutResult<T> = { result: T; timedOut: false } | { result: null; timedOut: true };
+
+/**
+ * Wraps a promise with a timeout. Returns a wrapper object that distinguishes
+ * between timeouts and other null results from the underlying promise.
+ * The timeout is properly cleaned up when the main promise resolves to prevent
+ * spurious warning logs.
+ */
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<TimeoutResult<T>> => {
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    let didTimeout = false;
+
+    const timeoutPromise = new Promise<TimeoutResult<T>>((resolve) => {
+        timeoutHandle = setTimeout(() => {
+            didTimeout = true;
+            logger.warn({ dpidNumber, timeoutMs }, "DPID lookup timed out, skipping this dpid to avoid blocking the batch");
+            resolve({ result: null, timedOut: true });
+        }, timeoutMs);
+    });
+
+    const wrappedPromise = promise.then((result) => {
+        // Clear timeout if promise resolved before timeout fired
+        if (timeoutHandle && !didTimeout) {
+            clearTimeout(timeoutHandle);
+        }
+        return { result, timedOut: false as const };
+    });
+
+    return Promise.race([wrappedPromise, timeoutPromise]);
+};
+
 /**
  * Helper function to build URL query parameters for pagination
  */
@@ -205,6 +240,8 @@ export type DpidQueryResult = {
     latestCid: string;
     versionCount: number;
     source: "ceramic" | "legacy";
+    /** Timestamp of the latest version (anchor time), undefined if not yet anchored */
+    latestTimestamp?: number;
     /** Only included when history=true */
     versions?: DpidVersion[];
     /** Only included when metadata=true */
@@ -286,6 +323,11 @@ const getLightweightDpidInfo = async (
                     }
 
                     const totalTime = Date.now() - startTime;
+                    // Extract latest timestamp from the most recent version
+                    // Normalize undefined/null to undefined for consistent API response
+                    const latestVersion = history.versions[history.versions.length - 1];
+                    const latestTimestamp = latestVersion?.time ?? undefined;
+
                     logger.info(
                         {
                             dpidNumber,
@@ -294,6 +336,7 @@ const getLightweightDpidInfo = async (
                             metadataTime,
                             totalTime,
                             versionCount: history.versions.length,
+                            latestTimestamp,
                             includeHistory,
                             includeMetadata,
                             metadataFields: includeMetadata ? metadataFields : undefined,
@@ -308,12 +351,13 @@ const getLightweightDpidInfo = async (
                         versionCount: history.versions.length,
                         source: "ceramic" as const,
                         streamId,
+                        latestTimestamp,
                         metadata,
                         // Include full version info
                         versions: history.versions.map((v, index: number) => ({
                             index,
                             cid: v.manifest,
-                            time: v.time,
+                            time: v.time ?? undefined,
                         })),
                     };
                 } catch (e) {
@@ -359,6 +403,15 @@ const getLightweightDpidInfo = async (
                     // Get basic version count from log without processing each commit
                     const commitCount = stream.state.log.filter(({ type }) => type !== 2).length;
 
+                    // Get the latest timestamp from the most recent log entry
+                    // We look for the last log entry with a timestamp (anchored commits have timestamps)
+                    const latestLogEntry = stream.state.log
+                        .slice()
+                        .reverse()
+                        .find((entry) => entry.timestamp !== undefined && entry.timestamp !== null);
+                    // Normalize undefined/null to undefined for consistent API response
+                    const latestTimestamp = latestLogEntry?.timestamp ?? undefined;
+
                     logger.info(
                         {
                             dpidNumber,
@@ -367,6 +420,7 @@ const getLightweightDpidInfo = async (
                             metadataTime,
                             totalTime,
                             versionCount: commitCount,
+                            latestTimestamp,
                             includeHistory,
                             includeMetadata,
                             metadataFields: includeMetadata ? metadataFields : undefined,
@@ -381,6 +435,7 @@ const getLightweightDpidInfo = async (
                         versionCount: commitCount,
                         source: "ceramic" as const,
                         streamId,
+                        latestTimestamp,
                         metadata,
                         // No detailed version info when history=false
                         versions: [],
@@ -422,6 +477,19 @@ const getLightweightDpidInfo = async (
 
                 const latestCid = versions[versions.length - 1]?.[0] || "";
 
+                // Extract latest timestamp from the most recent version
+                // Normalize undefined/null to undefined for consistent API response
+                const latestVersionEntry = versions[versions.length - 1];
+                let latestTimestamp: number | undefined = undefined;
+                if (latestVersionEntry) {
+                    if (latestVersionEntry.time?.toNumber) {
+                        latestTimestamp = latestVersionEntry.time.toNumber();
+                    } else {
+                        const rawTimestamp = (latestVersionEntry as unknown as LegacyVersionEntry)[1];
+                        latestTimestamp = typeof rawTimestamp === "number" ? rawTimestamp : undefined;
+                    }
+                }
+
                 let metadata: ManifestMetadata | undefined;
                 let metadataTime = 0;
 
@@ -440,6 +508,7 @@ const getLightweightDpidInfo = async (
                         metadataTime,
                         totalTime,
                         versionCount: versions.length,
+                        latestTimestamp,
                         includeHistory,
                         includeMetadata,
                         metadataFields: includeMetadata ? metadataFields : undefined,
@@ -454,15 +523,23 @@ const getLightweightDpidInfo = async (
                     versionCount: versions.length,
                     source: "legacy" as const,
                     streamId: "",
+                    latestTimestamp,
                     metadata,
                     versions: includeHistory
-                        ? versions.map((v, index: number) => ({
-                              index,
-                              cid: v.cid || (v as unknown as LegacyVersionEntry)[0],
-                              time: v.time?.toNumber
-                                  ? v.time.toNumber()
-                                  : ((v as unknown as LegacyVersionEntry)[1] as number),
-                          }))
+                        ? versions.map((v, index: number) => {
+                              let time: number | undefined = undefined;
+                              if (v.time?.toNumber) {
+                                  time = v.time.toNumber();
+                              } else {
+                                  const rawTime = (v as unknown as LegacyVersionEntry)[1];
+                                  time = typeof rawTime === "number" ? rawTime : undefined;
+                              }
+                              return {
+                                  index,
+                                  cid: v.cid || (v as unknown as LegacyVersionEntry)[0],
+                                  time,
+                              };
+                          })
                         : [],
                 };
             } catch (e) {
@@ -619,37 +696,60 @@ export const dpidListHandler = async (
             }
         }
 
-        // Step 4: Batch fetch lightweight DPID info (much faster!)
+        // Step 4: Batch fetch lightweight DPID info with timeout protection
+        // Each dpid has a timeout to prevent one slow/broken dpid from blocking the entire batch
         const baseUrl = `${req.protocol}://${req.get("host")}`;
         const batchStart = Date.now();
-        logger.info({ dpidCount: dpidNumbers.length }, "Fetching lightweight DPID info in parallel");
-
-        const dpidPromises = dpidNumbers.map((dpidNumber) =>
-            getLightweightDpidInfo(dpidNumber, includeHistory, includeMetadata, metadataFields),
+        logger.info(
+            { dpidCount: dpidNumbers.length, timeoutMs: DPID_LOOKUP_TIMEOUT_MS },
+            "Fetching lightweight DPID info in parallel with timeout protection",
         );
 
-        const dpidInfos = await Promise.all(dpidPromises);
+        const dpidPromises = dpidNumbers.map((dpidNumber) =>
+            withTimeout(
+                getLightweightDpidInfo(dpidNumber, includeHistory, includeMetadata, metadataFields),
+                DPID_LOOKUP_TIMEOUT_MS,
+                dpidNumber,
+            ),
+        );
+
+        const wrappedResults = await Promise.all(dpidPromises);
         const batchTime = Date.now() - batchStart;
+
+        // Count timeouts vs other failures accurately
+        const timedOutCount = wrappedResults.filter((r) => r.timedOut).length;
+        const successCount = wrappedResults.filter((r) => !r.timedOut && r.result !== null).length;
+        const failedCount = wrappedResults.filter((r) => !r.timedOut && r.result === null).length;
 
         logger.info(
             {
                 dpidCount: dpidNumbers.length,
+                successCount,
+                timedOutCount,
+                failedCount,
                 batchTime,
                 avgTimePerDpid: Math.round(batchTime / dpidNumbers.length),
             },
             "Batch DPID lookup completed",
         );
 
-        // Step 5: Transform to API format
+        // Step 5: Transform to API format - extract successful results
+        const dpidInfos = wrappedResults
+            .filter((r) => !r.timedOut && r.result !== null)
+            .map((r) => r.result!);
+
         const resolvedDpids = dpidInfos
-            .filter((info): info is NonNullable<typeof info> => info !== null)
             .map((info) => {
+                // Normalize latestTimestamp: ensure undefined/null becomes undefined
+                const latestTimestamp = info.latestTimestamp ?? undefined;
+
                 const baseResult = {
                     dpid: info.dpid,
                     owner: info.owner,
                     latestCid: info.latestCid,
                     versionCount: info.versionCount,
                     source: info.source,
+                    latestTimestamp,
                     links: {
                         history: `${baseUrl}/api/v2/query/history/${info.dpid}`,
                         latest: `${baseUrl}/api/v2/resolve/dpid/${info.dpid}`,
