@@ -11,6 +11,11 @@ export const setupProcessHandlers = () => {
         process.exit(1);
     });
 
+    process.on("unhandledRejection", (reason, promise) => {
+        logger.fatal({ reason, promise }, "exiting on unhandled promise rejection");
+        process.exit(1);
+    });
+
     process.on("exit", (code) => {
         logger.info({ code }, "process exiting");
     });

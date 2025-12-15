@@ -36,7 +36,10 @@ spec:
                   name: dpid-resolver
                   command: ["/bin/bash", "-c"]
                   args:
-                      - echo "SOURCING ENV"; source /vault/secrets/config; dumb-init node ./dist/index.js;
+                      - dumb-init node --import ./dist/instrument.mjs dist/index.js;
+                  env:
+                    - name: BASH_ENV
+                      value: /vault/secrets/config
                   ports:
                       - containerPort: 5460
                   resources:
@@ -73,6 +76,7 @@ metadata:
     alb.ingress.kubernetes.io/scheme: "internet-facing"
     alb.ingress.kubernetes.io/target-type: "ip"
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: "/healthz"
     # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
     # alb.ingress.kubernetes.io/ssl-redirect: '443'
     # If you have a certificate for SSL termination at ALB

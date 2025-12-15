@@ -2,6 +2,8 @@ import { Router } from "express";
 import { objectQueryHandler } from "./queries/objects.js";
 import { historyQueryHandler } from "./queries/history.js";
 import { dpidListHandler } from "./queries/dpids.js";
+import { ownerQueryHandler } from "./queries/owner.js";
+import { reverseLookupHandler } from "./queries/reverseLookup.js";
 
 const router = Router();
 
@@ -525,5 +527,182 @@ router.post("/history", historyQueryHandler);
  *               $ref: '#/components/schemas/ResearchObjectQueryError'
  */
 router.get("/dpids", dpidListHandler);
+
+/**
+ * @swagger
+ * /v2/query/owner/{id}:
+ *   get:
+ *     tags:
+ *       - Query
+ *     summary: Query for research objects by owner
+ *     description: |
+ *       Retrieve all research objects owned by a specific address. This endpoint:
+ *       - Fetches all research objects from the system
+ *       - Filters them by the specified owner address
+ *       - Supports both full DID format and plain address format
+ *
+ *       ## Owner ID Format
+ *       The owner ID can be provided in two formats:
+ *       - **Plain address**: `0x90b2c654f18e491a566d6a38c491cf82745e5987`
+ *       - **Full DID**: `did:pkh:eip155:1337:0x90b2c654f18e491a566d6a38c491cf82745e5987`
+ *
+ *       The endpoint will match both formats automatically.
+ *
+ *       ## Use Cases
+ *       - **User dashboards**: Display all research objects for a specific researcher
+ *       - **Profile pages**: Show publication history for an address
+ *       - **Analytics**: Track research output by author/institution
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: |
+ *           Owner address or DID to filter by.
+ *           Examples:
+ *           - Plain address: 0x90b2c654f18e491a566d6a38c491cf82745e5987
+ *           - Full DID: did:pkh:eip155:1337:0x90b2c654f18e491a566d6a38c491cf82745e5987
+ *         example: "0x90b2c654f18e491a566d6a38c491cf82745e5987"
+ *     responses:
+ *       200:
+ *         description: List of research objects owned by the specified address
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/ResearchObject'
+ *             examples:
+ *               success:
+ *                 summary: Successful response with research objects
+ *                 value:
+ *                   - id: "kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *                     owner: "did:pkh:eip155:1337:0x90b2c654f18e491a566d6a38c491cf82745e5987"
+ *                     manifest: "bafkreiasyoawbtjotfckd7yi33t4rxidiqusrwj6g2hb2gsczw35nlt4we"
+ *                     title: "Research Object Title"
+ *                   - id: "kjzl6kcym7w8y8zxcv9io123nmzrprs5ndmcqtugbtnd27kko22fuyev08r9876"
+ *                     owner: "did:pkh:eip155:1337:0x90b2c654f18e491a566d6a38c491cf82745e5987"
+ *                     manifest: "bafkreidfg3awbtjotfckd7yi33t4rxidiqusrwj6g2hb2gsczw35nlt5ab"
+ *                     title: "Another Research Object"
+ *               empty:
+ *                 summary: No research objects found for owner
+ *                 value: []
+ *       400:
+ *         description: Invalid request - missing owner ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *             example:
+ *               error: "invalid request"
+ *               details: "missing owner id in path parameter"
+ *               params: {}
+ *               path: "api/v2/queries/owner"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *             example:
+ *               error: "failed to fetch research objects"
+ *               details: "flight client error"
+ *               params: { id: "0x90b2c654f18e491a566d6a38c491cf82745e5987" }
+ *               path: "api/v2/queries/owner"
+ */
+router.get("/owner/:id?", ownerQueryHandler);
+
+/**
+ * @swagger
+ * /v2/query/reverse/{id}:
+ *   get:
+ *     tags:
+ *       - Query
+ *     summary: Reverse lookup - find DPID by stream ID
+ *     description: |
+ *       Perform a reverse lookup to find the DPID associated with a given stream ID.
+ *       This is useful when you have a Ceramic stream ID and need to find its corresponding DPID.
+ *
+ *       ## How It Works
+ *       The endpoint searches through all registered DPIDs to find which one maps to the
+ *       provided stream ID. Results are cached for improved performance on subsequent lookups.
+ *
+ *       ## Use Cases
+ *       - **External integrations**: Map Ceramic stream IDs back to DPIDs
+ *       - **Data reconciliation**: Verify DPID-to-stream mappings
+ *       - **Cross-referencing**: Find DPID when only stream ID is known
+ *
+ *       Subsequent lookups for the same stream ID are served from cache.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: |
+ *           The Ceramic stream ID to look up.
+ *           Example: kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682
+ *         example: "kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *     responses:
+ *       200:
+ *         description: DPID found for the provided stream ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 dpid:
+ *                   type: integer
+ *                   description: The DPID number associated with this stream ID
+ *                 streamId:
+ *                   type: string
+ *                   description: The stream ID that was looked up
+ *                 links:
+ *                   type: object
+ *                   properties:
+ *                     resolve:
+ *                       type: string
+ *                       description: URL to resolve this DPID
+ *                     history:
+ *                       type: string
+ *                       description: URL to get version history for this DPID
+ *             example:
+ *               dpid: 46
+ *               streamId: "kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *               links:
+ *                 resolve: "http://localhost:5461/api/v2/resolve/dpid/46"
+ *                 history: "http://localhost:5461/api/v2/query/history/46"
+ *       400:
+ *         description: Invalid request - missing stream ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *             example:
+ *               error: "invalid request"
+ *               details: "missing stream ID in path parameter"
+ *               params: {}
+ *               path: "api/v2/queries/reverseLookup"
+ *       404:
+ *         description: No DPID found for the provided stream ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ *             example:
+ *               error: "not found"
+ *               details: "no DPID found for stream ID: kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *               params:
+ *                 id: "kjzl6kcym7w8y92di94io797nmzrprs5ndmcqtugbtnd27kko22fuyev08r4682"
+ *               path: "api/v2/queries/reverseLookup"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ResearchObjectQueryError'
+ */
+router.get("/reverse/:id?", reverseLookupHandler);
 
 export default router;

@@ -3,10 +3,11 @@ import parentLogger, { serializeError } from "../../../logger.js";
 import { pidFromStringID, type PID } from "@desci-labs/desci-codex-lib";
 import { getCodexHistory, type HistoryQueryResult } from "../queries/history.js";
 import { IPFS_GATEWAY } from "../../../util/config.js";
-import { MystTransformer, RoCrateTransformer } from "@desci-labs/desci-models";
+import { RoCrateTransformer } from "@desci-labs/desci-models";
 import { getStreamHistory } from "@desci-labs/desci-codex-lib/c1/resolve";
 import { cleanupEip155Address } from "../../../util/conversions.js";
 import { flightClient } from "../../../flight.js";
+import { getManifest } from "../../../util/manifests.js";
 
 const CERAMIC_URL = process.env.CERAMIC_URL;
 const MODULE_PATH = "/api/v2/resolvers/codex" as const;
@@ -84,9 +85,9 @@ export const resolveCodexHandler = async (
     // If request contained a commitID, we can derive the stream ID from that
     const streamId = versionByCommit ? codexPid.id.baseID.toString() : codexPid.id.toString();
 
-    let result: HistoryQueryResult;
+    let historyResult: HistoryQueryResult;
     try {
-        result = await resolveCodex(streamId, versionIx);
+        historyResult = await resolveCodex(streamId, versionIx);
     } catch (e) {
         const err = e as Error;
         // TODO filter error for stream not found from technical issues
@@ -103,11 +104,14 @@ export const resolveCodexHandler = async (
     // entry if a versionIx wasn't passed. If a CommitID was included, set
     // top-level manifest to the CID from the corresponding version.
     if (versionByCommit) {
-        const commitVersion = result.versions.find(({ version }) => version === codexPid.id.toString());
+        const commitVersion = historyResult.versions.find(({ version }) => version === codexPid.id.toString());
         if (!commitVersion) {
             // This is unlikely but very weird if it occurs, since we found the
             // stream from this commit ID
-            logger.error({ streamOrCommitId, versions: result.versions }, "CommitID not found in stream versions");
+            logger.error(
+                { streamOrCommitId, versions: historyResult.versions },
+                "CommitID not found in stream versions",
+            );
             return res.status(404).send({
                 error: "Could not resolve, does stream/version exist?",
                 details: "CommitID not found in stream versions",
@@ -115,33 +119,91 @@ export const resolveCodexHandler = async (
                 path: MODULE_PATH,
             });
         }
-        result.manifest = commitVersion.manifest;
+        historyResult.manifest = commitVersion.manifest;
     }
 
-    const manifestUrl = `${IPFS_GATEWAY}/${result.manifest}`;
+    /* Return early with a redirect if the raw manifest file was requested */
+    const cid = historyResult.manifest;
     if (wantRaw) {
-        return res.redirect(manifestUrl);
-    } else if (wantJsonLd) {
-        const transformer = new RoCrateTransformer();
-        const response = await fetch(manifestUrl);
-        if (!response.ok) {
+        return res.redirect(`${IPFS_GATEWAY}/${cid}`);
+    }
+
+    if (wantJsonLd) {
+        const manifest = await getManifest(cid);
+        if (!manifest) {
             return res.status(500).send({
                 error: "Could not resolve manifest",
-                details: `Couldn't find manifest ${result.manifest} for RO-Crate transform`,
+                details: `Couldn't find manifest ${cid} for RO-Crate transform`,
                 params: req.params,
                 path: MODULE_PATH,
             });
         }
-        const roCrate = transformer.exportObject(await response.json());
+        const transformer = new RoCrateTransformer();
+        const roCrate = transformer.exportObject(manifest);
         return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
-    } else if (wantMyst) {
-        const transformer = new MystTransformer();
-        const response = await fetch(manifestUrl);
-        const mystOutput = transformer.exportObject(await response.json());
-        return res.setHeader("Content-Type", "text/myst").send(mystOutput);
-    } else {
-        return res.status(200).send(result);
     }
+
+    if (wantMyst) {
+        const manifest = await getManifest(cid);
+        if (!manifest) {
+            return res.status(500).send({
+                error: "Could not resolve manifest",
+                details: `Couldn't find manifest ${cid} for MyST transform`,
+                params: req.params,
+                path: MODULE_PATH,
+            });
+        }
+        // We do not know IJ id here; just set slug to stream id string fallback
+        const page: {
+            version: number;
+            kind: string;
+            sha256: string;
+            slug: string;
+            location: string;
+            dependencies: unknown[];
+            frontmatter: {
+                title?: string;
+                abstract?: string;
+                license?: string;
+                keywords?: string[];
+                tags?: string[];
+                authors?: Array<{
+                    name: string;
+                    roles?: string[];
+                    orcid?: string;
+                    institutions?: string[];
+                }>;
+            };
+            mdast: { type: string };
+            references: Array<{ type?: string; id?: string; title?: string }>;
+        } = {
+            version: 2,
+            kind: "Article",
+            sha256: "",
+            slug: streamOrCommitId,
+            location: "",
+            dependencies: [],
+            frontmatter: {
+                title: manifest.title,
+                abstract: manifest.description,
+                license: manifest.defaultLicense,
+                keywords: manifest.keywords,
+                tags: manifest.tags?.map((t) => t.name),
+                authors: manifest.authors?.map((a) => ({
+                    name: a.name,
+                    roles: Array.isArray(a.role) ? (a.role as string[]) : [a.role as string],
+                    orcid: a.orcid,
+                    institutions: a.organizations?.map((o) => o.name),
+                })),
+            },
+            mdast: { type: "root" },
+            references: manifest.references?.map((r) => ({ type: r.type, id: r.id, title: r.title })) ?? [],
+        };
+        return res.setHeader("Content-Type", "application/json").send(JSON.stringify(page));
+    }
+
+    /* Default to the raw history response if no other format was requested */
+    return res.status(200).send(historyResult);
 };
 
 /** Resolve full stream history */

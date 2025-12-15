@@ -11,6 +11,7 @@ env:
     AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
     AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
     AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
     CONTAINER_IMAGE: dpid-resolver
     DOCKER_BUILDKIT: 1
 
@@ -66,6 +67,7 @@ jobs:
               run: |
                   # Build and tag the image
                   docker build \
+                    --secret id=SENTRY_AUTH_TOKEN \
                     --build-arg NODE_VERSION=$(< .nvmrc) \
                     -t $CONTAINER_IMAGE-dev:latest \
                     -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$CONTAINER_IMAGE-dev \
@@ -76,6 +78,7 @@ jobs:
               run: |
                   # Build and tag the image
                   docker build \
+                    --secret id=SENTRY_AUTH_TOKEN \
                     --build-arg NODE_VERSION=$(< .nvmrc) \
                     -t $CONTAINER_IMAGE:latest \
                     -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$CONTAINER_IMAGE \

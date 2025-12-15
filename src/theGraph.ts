@@ -1,14 +1,15 @@
 import axios from "axios";
-import parentLogger from "../logger.js";
-import type { SortDirection } from "../api/v1/list.js";
+import parentLogger from "./logger.js";
+import type { SortDirection } from "./api/v1/list.js";
+import { httpAgent, httpsAgent } from "./util/httpAgent.js";
 const logger = parentLogger.child({ module: "TheGraphResolver" });
 
 /**
- * 
- * @param url 
- * @param prefix 
- * @returns 
- * 
+ *
+ * @param url
+ * @param prefix
+ * @returns
+ *
  {
   "data": {
     "registers": [
@@ -72,7 +73,7 @@ export const getIndexedResearchObjects = async (url: string, hex: string[]) => {
         id, id10, recentCid, owner, versions(orderBy: time, orderDirection: desc) {
           cid, id, time
         }
-      } 
+      }
     }`;
     return query(url, q);
 };
@@ -81,7 +82,7 @@ export const query = async (url: string, query: string) => {
     const payload = JSON.stringify({
         query,
     });
-    const { data } = await axios.post(url, payload);
+    const { data } = await axios.post(url, payload, { httpAgent, httpsAgent });
     if (data.errors) {
         logger.error(data.errors, `graph index query err ${query}`);
         throw Error(JSON.stringify(data.errors));

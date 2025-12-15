@@ -1,13 +1,17 @@
 import type { Request, Response } from "express";
 import axios from "axios";
-import { RoCrateTransformer, type ResearchObjectV1, MystTransformer } from "@desci-labs/desci-models";
+import { RoCrateTransformer, type ResearchObjectV1 } from "@desci-labs/desci-models";
 
 import parentLogger, { serializeError } from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
 import { IPFS_GATEWAY, getNodesUrl } from "../../../util/config.js";
+import { buildMystPageFromManifest, type IJMetadata } from "../../../util/myst.js";
 import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
 import { isDpid, isVersionString } from "../../../util/validation.js";
+import { getIpfsFolderTreeByCid, ipfsCat, type EnhancedIpfsEntry } from "../data/getIpfsFolder.js";
+import { getManifest } from "../../../util/manifests.js";
+import { httpAgent, httpsAgent } from "../../../util/httpAgent.js";
 
 const MODULE_PATH = "/api/v2/resolvers/generic" as const;
 
@@ -44,6 +48,10 @@ export type SuccessResponse =
     | unknown; // in case of directly returning an UnixFS data node
 
 export type ResolveGenericResponse = SuccessResponse | ErrorResponse;
+
+const flattenIpfsFolder = (ipfsFolder: EnhancedIpfsEntry): Array<EnhancedIpfsEntry> => {
+    return ipfsFolder.children?.flatMap((child: EnhancedIpfsEntry) => [child, ...flattenIpfsFolder(child)]) ?? [];
+};
 
 /**
  * Resolve a dPID path. Will redirect to Nodes as viewer,
@@ -114,37 +122,89 @@ export const resolveGenericHandler = async (
     }
 
     if (isJsonld) {
-        logger.warn({ path, query }, "got request for jsonld");
-        const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
-
-        // console.log({ resolveResult });
-
-        const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
-
+        logger.info({ path, query }, "got request for jsonld");
+        const { manifest: cid } = await resolveDpid(parseInt(dpid), versionIx);
         const transformer = new RoCrateTransformer();
 
-        const response = await fetch(manifestUrl);
+        const manifest = await getManifest(cid);
+        if (!manifest) {
+            return res.status(500).send({ error: "Could not get manifest", cid });
+        }
 
-        // console.log({ manifestUrl });
-
-        const roCrate = transformer.exportObject(await response.json());
-
+        const roCrate = transformer.exportObject(manifest);
         return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
     }
 
     if (isMyst) {
-        logger.warn({ path, query }, "got request for myst");
+        logger.info({ path, query }, "got request for myst");
         const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
 
-        const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
+        const cid = resolveResult.manifest;
+        const manifest = await getManifest(cid);
+        if (!manifest) {
+            return res.status(500).send({ error: "Could not get manifest", cid });
+        }
 
-        const response = await fetch(manifestUrl);
+        const dataBucket = manifest.components[0].payload;
+        if (!dataBucket) {
+            return res.status(500).send({ error: "Could not find data bucket in manifest", cid });
+        }
 
-        const transformer = new MystTransformer();
+        const ipfsFolder = await getIpfsFolderTreeByCid(dataBucket.cid, {
+            rootName: "root",
+            concurrency: 8,
+            depth: "full",
+        });
 
-        const mystOutput = transformer.exportObject(JSON.parse(await response.text()));
+        let ijMetadata: IJMetadata | undefined;
+        try {
+            const tempMetadata = (await ipfsCat(`${dataBucket.cid}/insight-journal-metadata.json`)) as unknown as {
+                license: string;
+                publication_id: number;
+                revisions: Array<{
+                    citation_list: Array<{ type?: string; id?: string; title?: string }>;
+                    doi?: string;
+                }>;
+                date_submitted: string;
+                submitted_by_author: {
+                    author_email: string;
+                    author_institution: string;
+                };
+                tags?: string[];
+                source_code_git_repo?: string;
+            };
+            logger.info({ ipfsFolder }, "Temp metadata");
 
-        return res.setHeader("Content-Type", "text/myst").send(mystOutput);
+            const cover = (manifest.coverImage as string | undefined) ?? undefined;
+            ijMetadata = {
+                license_text: tempMetadata.license,
+                id: tempMetadata.publication_id,
+                citation_list: tempMetadata.revisions[0]?.citation_list,
+                date_submitted: tempMetadata.date_submitted,
+                corresponding_author: tempMetadata.submitted_by_author?.author_email,
+                affiliations: {
+                    [tempMetadata.submitted_by_author?.author_email]:
+                        tempMetadata.submitted_by_author?.author_institution,
+                },
+                thumbnail: cover ? `https://pub.desci.com/ipfs/${cover}` : undefined,
+                flatFiles: flattenIpfsFolder(ipfsFolder).filter((f) => f.type === "file"),
+                doi: tempMetadata.revisions?.[0]?.doi,
+                tags: tempMetadata.tags,
+                source_code_git_repo: tempMetadata.source_code_git_repo,
+            };
+        } catch (e) {
+            logger.error(e, "Error fetching ij metadata");
+        }
+
+        const page = await buildMystPageFromManifest({
+            manifest,
+            dpid: parseInt(dpid),
+            history: resolveResult,
+            version: versionIx,
+            ijMetadata,
+        });
+
+        return res.setHeader("Content-Type", "application/json").send(JSON.stringify(page));
     }
 
     analytics.log({
@@ -211,16 +271,22 @@ export const resolveGenericHandler = async (
 
     /** dPID path doesn't refer to a file in the data tree */
     const noDagPath = suffix.length === 0;
-    const manifestUrl = `${IPFS_GATEWAY}/${resolveResult.manifest}`;
+    const cid = resolveResult.manifest;
+    const manifestUrl = `${IPFS_GATEWAY}/${cid}`;
 
     if (noDagPath) {
         // Return manifest url as is
         logger.info({ dpid, manifestUrl, path, query, suffix }, "redirecting raw request to IPFS resolver");
         return res.redirect(manifestUrl);
     } else if (suffix.startsWith("root") || suffix.startsWith("data")) {
-        logger.info({ dpid, path, query, suffix }, "assuming suffix is a drive path");
         // The suffix is pointing to a target in drive, let's find the UnixFS root
-        const manifest = (await fetch(manifestUrl).then(async (r) => await r.json())) as ResearchObjectV1;
+        logger.info({ dpid, path, query, suffix }, "assuming suffix is a drive path");
+
+        const manifest = await getManifest(cid);
+        if (!manifest) {
+            return res.status(500).send({ error: "Could not get manifest", cid });
+        }
+
         const maybeDataBucket = manifest.components.find((c) => c.name === "root");
         // || manifest.components[0] shouldn't be necessary?
 
@@ -240,7 +306,7 @@ export const resolveGenericHandler = async (
 
         try {
             // Let's be optimistic
-            const { data } = await axios({ method: "POST", url: maybeValidDagUrl });
+            const { data } = await axios({ method: "POST", url: maybeValidDagUrl, httpAgent, httpsAgent });
             logger.info({ ipfsData: data }, "IPFS DATA");
 
             // Check for magical UnixFS clues
