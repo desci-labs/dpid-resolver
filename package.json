@@ -44,7 +44,7 @@
   "dependencies": {
     "@desci-labs/desci-codex-lib": "^2.0.0-rc8",
     "@desci-labs/desci-contracts": "^0.2.7",
-    "@desci-labs/desci-models": "^0.2.25-rc1",
+    "@desci-labs/desci-models": "file:../nodes/desci-models",
     "@sentry/node": "^10.22.0",
     "@sentry/profiling-node": "^10.22.0",
     "@supabase/supabase-js": "^2.43.5",
