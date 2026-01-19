@@ -118,7 +118,9 @@ export const historyQueryHandler = async (
                 ...baseError,
             };
             logger.error(errPayload, "failed to resolve dpid");
-            return res.status(500).send(errPayload);
+            // Return 404 for DpidNotFound, 500 for other resolver errors
+            const statusCode = e.name === "DpidNotFound" ? 404 : 500;
+            return res.status(statusCode).send(errPayload);
         }
         const errPayload = {
             error: "failed to compile histories",
