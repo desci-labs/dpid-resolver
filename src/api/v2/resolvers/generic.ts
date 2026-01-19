@@ -123,7 +123,24 @@ export const resolveGenericHandler = async (
 
     if (isJsonld) {
         logger.info({ path, query }, "got request for jsonld");
-        const { manifest: cid } = await resolveDpid(parseInt(dpid), versionIx);
+        let cid: string;
+        try {
+            const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
+            cid = resolveResult.manifest;
+        } catch (e) {
+            if (e instanceof DpidResolverError) {
+                const errPayload = {
+                    error: e.message,
+                    details: serializeError(e.cause),
+                    ...baseError,
+                };
+                logger.error(errPayload, "failed to resolve dpid for jsonld");
+                // Return 404 for DpidNotFound, 500 for other resolver errors
+                const statusCode = e.name === "DpidNotFound" ? 404 : 500;
+                return res.status(statusCode).send(errPayload);
+            }
+            throw e; // Re-throw unexpected errors
+        }
         const transformer = new RoCrateTransformer();
 
         const manifest = await getManifest(cid);
@@ -137,7 +154,23 @@ export const resolveGenericHandler = async (
 
     if (isMyst) {
         logger.info({ path, query }, "got request for myst");
-        const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
+        let resolveResult;
+        try {
+            resolveResult = await resolveDpid(parseInt(dpid), versionIx);
+        } catch (e) {
+            if (e instanceof DpidResolverError) {
+                const errPayload = {
+                    error: e.message,
+                    details: serializeError(e.cause),
+                    ...baseError,
+                };
+                logger.error(errPayload, "failed to resolve dpid for myst");
+                // Return 404 for DpidNotFound, 500 for other resolver errors
+                const statusCode = e.name === "DpidNotFound" ? 404 : 500;
+                return res.status(statusCode).send(errPayload);
+            }
+            throw e; // Re-throw unexpected errors
+        }
 
         const cid = resolveResult.manifest;
         const manifest = await getManifest(cid);
@@ -256,7 +289,9 @@ export const resolveGenericHandler = async (
                 ...baseError,
             };
             logger.error(errPayload, "failed to resolve dpid");
-            return res.status(500).send(errPayload);
+            // Return 404 for DpidNotFound, 500 for other resolver errors
+            const statusCode = e.name === "DpidNotFound" ? 404 : 500;
+            return res.status(statusCode).send(errPayload);
         } else {
             const err = e as Error;
             const errPayload = {
