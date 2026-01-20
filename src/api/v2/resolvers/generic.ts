@@ -178,16 +178,26 @@ export const resolveGenericHandler = async (
             return res.status(500).send({ error: "Could not get manifest", cid });
         }
 
-        const dataBucket = manifest.components[0].payload;
-        if (!dataBucket) {
-            return res.status(500).send({ error: "Could not find data bucket in manifest", cid });
+        const dataBucket = manifest.components[0]?.payload;
+        if (!dataBucket?.cid) {
+            return res.status(500).send({ error: "Could not find data bucket CID in manifest", cid });
         }
 
-        const ipfsFolder = await getIpfsFolderTreeByCid(dataBucket.cid, {
-            rootName: "root",
-            concurrency: 8,
-            depth: "full",
-        });
+        let ipfsFolder;
+        try {
+            ipfsFolder = await getIpfsFolderTreeByCid(dataBucket.cid, {
+                rootName: "root",
+                concurrency: 8,
+                depth: "full",
+            });
+        } catch (e) {
+            logger.error({ error: serializeError(e as Error), cid: dataBucket.cid }, "Failed to fetch IPFS folder tree");
+            return res.status(500).send({
+                error: "Failed to fetch IPFS folder tree",
+                details: serializeError(e as Error),
+                ...baseError,
+            });
+        }
 
         let ijMetadata: IJMetadata | undefined;
         try {
