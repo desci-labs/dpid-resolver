@@ -60,6 +60,21 @@ export const getNodesUrl = () => {
     }
 };
 
+/** Get the nodes API URL for fetching AI-generated keywords */
+export const getNodesApiUrl = () => {
+    switch (DPID_ENV) {
+        case "local":
+            return "http://localhost:5420";
+        case "dev":
+            return "https://nodes-api-dev.desci.com";
+        case "staging":
+        case "production":
+            return "https://nodes-api.desci.com";
+        default:
+            throw new Error(`No nodes API URL for DPID_ENV ${DPID_ENV}`);
+    }
+};
+
 const ONE_WEEK = 60 * 60 * 24 * 7;
 const TEN_MINUTES = 60 * 10;
 

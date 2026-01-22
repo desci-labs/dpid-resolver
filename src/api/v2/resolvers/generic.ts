@@ -4,7 +4,7 @@ import { RoCrateTransformer, type ResearchObjectV1 } from "@desci-labs/desci-mod
 
 import parentLogger, { serializeError } from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
-import { IPFS_GATEWAY, getNodesUrl } from "../../../util/config.js";
+import { IPFS_GATEWAY, getNodesUrl, getNodesApiUrl } from "../../../util/config.js";
 import { buildMystPageFromManifest, type IJMetadata } from "../../../util/myst.js";
 import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
@@ -20,6 +20,28 @@ const logger = parentLogger.child({
 
 const IPFS_API_URL = IPFS_GATEWAY.replace(/\/ipfs\/?$/, "/api/v0");
 const NODES_URL = getNodesUrl();
+
+/**
+ * Fetch AI-generated keywords from the nodes API for a given dPID.
+ * Returns an empty array if the fetch fails or no keywords are found.
+ */
+const fetchAiKeywords = async (dpid: number): Promise<string[]> => {
+    try {
+        const nodesApiUrl = getNodesApiUrl();
+        const response = await axios.get(
+            `${nodesApiUrl}/v1/search/library/${dpid}`,
+            { timeout: 5000 }
+        );
+        const concepts = response.data?.data?.concepts;
+        if (concepts && Array.isArray(concepts)) {
+            return concepts.map((c: { display_name: string }) => c.display_name);
+        }
+        return [];
+    } catch (e) {
+        logger.warn({ dpid, error: e }, "Failed to fetch AI keywords");
+        return [];
+    }
+};
 
 export type ResolveGenericParams = {
     // This is how express maps a wildcard :shrug:
@@ -231,6 +253,15 @@ export const resolveGenericHandler = async (
             logger.warn({ dpid, error: e }, "Failed to fetch file sizes from IPFS, continuing without them");
         }
 
+        // Fetch AI keywords if manifest has no keywords
+        let aiKeywords: string[] = [];
+        if (!manifest.keywords || manifest.keywords.length === 0) {
+            aiKeywords = await fetchAiKeywords(parseInt(dpid));
+            if (aiKeywords.length > 0) {
+                logger.info({ dpid, keywordCount: aiKeywords.length }, "Using AI-generated keywords");
+            }
+        }
+
         // Export with FAIR-compliant metadata
         const roCrate = transformer.exportObject(manifest, {
             dpid: parseInt(dpid),
@@ -238,6 +269,7 @@ export const resolveGenericHandler = async (
             publisher: 'DeSci Labs',
             dpidBaseUrl: baseUrl,
             fileSizes,
+            aiKeywords,
         });
         
         // Add Signposting headers
@@ -394,6 +426,15 @@ export const resolveGenericHandler = async (
                 } catch (e) {
                     logger.warn({ dpid, error: e }, "Failed to fetch file sizes for landing page");
                 }
+
+                // Fetch AI keywords if manifest has no keywords
+                let aiKeywords: string[] = [];
+                if (!manifest.keywords || manifest.keywords.length === 0) {
+                    aiKeywords = await fetchAiKeywords(parseInt(dpid));
+                    if (aiKeywords.length > 0) {
+                        logger.info({ dpid, keywordCount: aiKeywords.length }, "Using AI-generated keywords for landing page");
+                    }
+                }
                 
                 const roCrate = transformer.exportObject(manifest, {
                     dpid: parseInt(dpid),
@@ -401,6 +442,7 @@ export const resolveGenericHandler = async (
                     publisher: 'DeSci Labs',
                     dpidBaseUrl: baseUrl,
                     fileSizes,
+                    aiKeywords,
                 });
                 
                 // Add Signposting HTTP headers
