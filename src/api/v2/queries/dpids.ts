@@ -1,9 +1,8 @@
 import type { Request, Response } from "express";
-import { dpidAliasRegistry, getCeramicClient } from "../../../util/config.js";
+import { dpidAliasRegistry } from "../../../util/config.js";
 import parentLogger from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
-import { getCodexHistory } from "../queries/history.js";
-import { streams } from "@desci-labs/desci-codex-lib";
+import { getCodexHistory, getBasicStreamInfo, getBasicStreamInfoBatch } from "../queries/history.js";
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 
@@ -376,66 +375,57 @@ const getLightweightDpidInfo = async (
                     return null;
                 }
             } else {
-                // Basic info only (much faster)
+                // Basic info only - use lightweight getBasicStreamInfo (flightClient)
+                // This only fetches latest state + version count, not full history
                 try {
-                    const ceramic = getCeramicClient();
-                    const historyStart = Date.now();
+                    const infoStart = Date.now();
+                    const basicInfo = await getBasicStreamInfo(streamId);
+                    const infoTime = Date.now() - infoStart;
 
-                    // Just load the stream for basic info, don't fetch full history
-                    const streamID = streams.StreamID.fromString(streamId);
-                    const stream = await ceramic.loadStream(streamID);
-
-                    const historyTime = Date.now() - historyStart;
+                    if (!basicInfo) {
+                        const totalTime = Date.now() - startTime;
+                        logger.warn(
+                            { dpidNumber, streamId, totalTime },
+                            "getBasicStreamInfo returned null",
+                        );
+                        return null;
+                    }
 
                     let metadata: ManifestMetadata | undefined;
                     let metadataTime = 0;
 
                     if (includeMetadata) {
                         const metadataStart = Date.now();
-                        metadata =
-                            (await fetchManifestMetadata(stream.content.manifest as string, metadataFields)) ||
-                            undefined;
+                        metadata = (await fetchManifestMetadata(basicInfo.manifest, metadataFields)) || undefined;
                         metadataTime = Date.now() - metadataStart;
                     }
 
                     const totalTime = Date.now() - startTime;
 
-                    // Get basic version count from log without processing each commit
-                    const commitCount = stream.state.log.filter(({ type }) => type !== 2).length;
-
-                    // Get the latest timestamp from the most recent log entry
-                    // We look for the last log entry with a timestamp (anchored commits have timestamps)
-                    const latestLogEntry = stream.state.log
-                        .slice()
-                        .reverse()
-                        .find((entry) => entry.timestamp !== undefined && entry.timestamp !== null);
-                    // Normalize undefined/null to undefined for consistent API response
-                    const latestTimestamp = latestLogEntry?.timestamp ?? undefined;
-
                     logger.info(
                         {
                             dpidNumber,
                             registryTime,
-                            historyTime,
+                            infoTime,
                             metadataTime,
                             totalTime,
-                            versionCount: commitCount,
-                            latestTimestamp,
+                            versionCount: basicInfo.versionCount,
+                            latestTimestamp: basicInfo.latestTimestamp,
                             includeHistory,
                             includeMetadata,
                             metadataFields: includeMetadata ? metadataFields : undefined,
                         },
-                        "Ceramic DPID timing (basic info only)",
+                        "Ceramic DPID timing (basic info via getBasicStreamInfo)",
                     );
 
                     return {
                         dpid: dpidNumber,
-                        owner: (stream.state.metadata.controllers[0] as string).replace(/^did:pkh:eip155:\d+:/, ""),
-                        latestCid: stream.content.manifest as string,
-                        versionCount: commitCount,
+                        owner: basicInfo.owner,
+                        latestCid: basicInfo.manifest,
+                        versionCount: basicInfo.versionCount,
                         source: "ceramic" as const,
                         streamId,
-                        latestTimestamp,
+                        latestTimestamp: basicInfo.latestTimestamp,
                         metadata,
                         // No detailed version info when history=false
                         versions: [],
@@ -451,7 +441,7 @@ const getLightweightDpidInfo = async (
                             includeMetadata,
                             error: (e as Error).message,
                         },
-                        "Failed to fetch basic Ceramic info",
+                        "Failed to fetch basic Ceramic info via getBasicStreamInfo",
                     );
                     return null;
                 }
@@ -696,51 +686,117 @@ export const dpidListHandler = async (
             }
         }
 
-        // Step 4: Batch fetch lightweight DPID info with timeout protection
-        // Each dpid has a timeout to prevent one slow/broken dpid from blocking the entire batch
+        // Step 4: Optimized batch fetch using single FlightSQL query for Ceramic DPIDs
         const baseUrl = `${req.protocol}://${req.get("host")}`;
         const batchStart = Date.now();
+
+        // Step 4a: Get all registry entries in parallel to identify Ceramic vs Legacy DPIDs
+        const registryStart = Date.now();
+        const registryPromises = dpidNumbers.map(async (dpidNumber) => {
+            try {
+                const streamId = await dpidAliasRegistry.registry(dpidNumber);
+                return { dpidNumber, streamId: streamId && streamId !== "" ? streamId : null };
+            } catch {
+                return { dpidNumber, streamId: null };
+            }
+        });
+        const registryResults = await Promise.all(registryPromises);
+        const registryTime = Date.now() - registryStart;
+
+        // Separate Ceramic DPIDs from Legacy DPIDs
+        const ceramicDpids = registryResults.filter((r) => r.streamId !== null);
+        const legacyDpids = registryResults.filter((r) => r.streamId === null);
+
         logger.info(
-            { dpidCount: dpidNumbers.length, timeoutMs: DPID_LOOKUP_TIMEOUT_MS },
-            "Fetching lightweight DPID info in parallel with timeout protection",
+            { dpidCount: dpidNumbers.length, ceramicCount: ceramicDpids.length, legacyCount: legacyDpids.length, registryTime },
+            "Registry lookup completed",
         );
 
-        const dpidPromises = dpidNumbers.map((dpidNumber) =>
-            withTimeout(
+        // Step 4b: Batch fetch all Ceramic DPIDs in ONE query (for basic info)
+        let ceramicInfoMap = new Map<string, { owner: string; manifest: string; versionCount: number; latestTimestamp: number | undefined }>();
+        if (ceramicDpids.length > 0 && !includeHistory) {
+            const streamIds = ceramicDpids.map((d) => d.streamId!);
+            const infoStart = Date.now();
+            ceramicInfoMap = await getBasicStreamInfoBatch(streamIds);
+            const infoTime = Date.now() - infoStart;
+            logger.info({ streamCount: streamIds.length, foundCount: ceramicInfoMap.size, infoTime }, "Batch stream info completed");
+        }
+
+        // Step 4c: For history requests or when batch fails, fall back to individual getLightweightDpidInfo
+        const dpidInfos: Array<{
+            dpid: number;
+            owner: string;
+            latestCid: string;
+            versionCount: number;
+            source: "ceramic" | "legacy";
+            streamId: string;
+            latestTimestamp: number | undefined;
+            metadata?: ManifestMetadata;
+            versions: VersionData[];
+        }> = [];
+
+        // Process Ceramic DPIDs
+        for (const { dpidNumber, streamId } of ceramicDpids) {
+            if (includeHistory) {
+                // Full history needed - use getLightweightDpidInfo
+                const result = await withTimeout(
+                    getLightweightDpidInfo(dpidNumber, true, includeMetadata, metadataFields),
+                    DPID_LOOKUP_TIMEOUT_MS,
+                    dpidNumber,
+                );
+                if (!result.timedOut && result.result) {
+                    dpidInfos.push(result.result);
+                }
+            } else {
+                // Use batch results
+                const info = ceramicInfoMap.get(streamId!);
+                if (info) {
+                    let metadata: ManifestMetadata | undefined;
+                    if (includeMetadata) {
+                        metadata = (await fetchManifestMetadata(info.manifest, metadataFields)) || undefined;
+                    }
+                    dpidInfos.push({
+                        dpid: dpidNumber,
+                        owner: info.owner,
+                        latestCid: info.manifest,
+                        versionCount: info.versionCount,
+                        source: "ceramic",
+                        streamId: streamId!,
+                        latestTimestamp: info.latestTimestamp,
+                        metadata,
+                        versions: [],
+                    });
+                }
+            }
+        }
+
+        // Process Legacy DPIDs
+        for (const { dpidNumber } of legacyDpids) {
+            const result = await withTimeout(
                 getLightweightDpidInfo(dpidNumber, includeHistory, includeMetadata, metadataFields),
                 DPID_LOOKUP_TIMEOUT_MS,
                 dpidNumber,
-            ),
-        );
+            );
+            if (!result.timedOut && result.result) {
+                dpidInfos.push(result.result);
+            }
+        }
 
-        const wrappedResults = await Promise.all(dpidPromises);
         const batchTime = Date.now() - batchStart;
-
-        // Count timeouts vs other failures accurately
-        const timedOutCount = wrappedResults.filter((r) => r.timedOut).length;
-        const successCount = wrappedResults.filter((r) => !r.timedOut && r.result !== null).length;
-        const failedCount = wrappedResults.filter((r) => !r.timedOut && r.result === null).length;
-
         logger.info(
             {
                 dpidCount: dpidNumbers.length,
-                successCount,
-                timedOutCount,
-                failedCount,
+                successCount: dpidInfos.length,
+                failedCount: dpidNumbers.length - dpidInfos.length,
                 batchTime,
                 avgTimePerDpid: Math.round(batchTime / dpidNumbers.length),
             },
             "Batch DPID lookup completed",
         );
 
-        // Step 5: Transform to API format - extract successful results
-        const dpidInfos = wrappedResults
-            .filter((r) => !r.timedOut && r.result !== null)
-            .map((r) => r.result!);
-
+        // Step 5: Transform to API format
         const resolvedDpids = dpidInfos
             .map((info) => {
-                // Normalize latestTimestamp: ensure undefined/null becomes undefined
                 const latestTimestamp = info.latestTimestamp ?? undefined;
 
                 const baseResult = {
@@ -759,7 +815,6 @@ export const dpidListHandler = async (
 
                 const result: DpidQueryResult = { ...baseResult };
 
-                // Conditionally include versions field only when history is requested
                 if (includeHistory && info.versions.length > 0) {
                     result.versions = info.versions.map((v: VersionData) => ({
                         index: v.index,
@@ -769,13 +824,14 @@ export const dpidListHandler = async (
                     }));
                 }
 
-                // Conditionally include metadata field only when metadata is requested
                 if (includeMetadata && info.metadata) {
                     result.metadata = info.metadata;
                 }
 
                 return result;
-            });
+            })
+            // Sort by dpid to maintain order (batch processing may have reordered)
+            .sort((a, b) => sort === "desc" ? b.dpid - a.dpid : a.dpid - b.dpid);
 
         // Step 6: Build response with pagination
         const hasNext = sort === "desc" ? startDpid > 1 : endDpid < totalDpids;

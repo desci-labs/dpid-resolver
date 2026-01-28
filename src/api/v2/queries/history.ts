@@ -9,6 +9,8 @@ import { flightClient } from "../../../flight.js";
 import { redisService } from "../../../redis.js";
 import { cleanupEip155Address } from "../../../util/conversions.js";
 import { getStreamHistory, getStreamHistoryMultiple } from "@desci-labs/desci-codex-lib/c1/resolve";
+import { StreamID } from "@ceramic-sdk/identifiers";
+import { tableFromIPC } from "apache-arrow";
 
 const MODULE_PATH = "api/v2/queries/history" as const;
 const logger = parentLogger.child({
@@ -53,6 +55,144 @@ export type HistoryQueryResult = {
     manifest: string;
     /** Research object title */
     versions: HistoryVersion[];
+};
+
+/**
+ * Lightweight result for basic stream info (no full version history)
+ */
+export type BasicStreamInfo = {
+    /** Stream ID */
+    id: string;
+    /** Owner address (hex format) */
+    owner: string;
+    /** Latest manifest CID */
+    manifest: string;
+    /** Number of versions */
+    versionCount: number;
+    /** Timestamp of latest anchored event */
+    latestTimestamp: number | undefined;
+};
+
+/**
+ * SQL query to get the latest state AND version count for multiple streams in ONE query.
+ * Uses a window function to get the latest state per stream and counts non-anchor events.
+ */
+const batchLatestStreamStateQuery = (streamIds: StreamID[]) => `
+  WITH latest_states AS (
+    SELECT DISTINCT ON (stream_cid)
+      controller,
+      cid_string(stream_cid) as stream_cid,
+      data::varchar->>'content' as state,
+      before
+    FROM event_states
+    WHERE cid_string(stream_cid) = ANY(ARRAY[${streamIds.map((id) => `'${id.cid.toString()}'`).join(",")}])
+    ORDER BY stream_cid, event_height DESC
+  ),
+  version_counts AS (
+    SELECT 
+      cid_string(stream_cid) as stream_cid,
+      COUNT(*) as version_count
+    FROM event_states
+    WHERE cid_string(stream_cid) = ANY(ARRAY[${streamIds.map((id) => `'${id.cid.toString()}'`).join(",")}])
+      AND event_type != 2
+    GROUP BY stream_cid
+  )
+  SELECT 
+    ls.controller,
+    ls.stream_cid,
+    ls.state,
+    ls.before,
+    COALESCE(vc.version_count, 1) as version_count
+  FROM latest_states ls
+  LEFT JOIN version_counts vc ON ls.stream_cid = vc.stream_cid;
+`;
+
+/**
+ * Get basic stream info for multiple streams in ONE query.
+ * Much more efficient than calling getBasicStreamInfo for each stream.
+ *
+ * @param streamIds - Array of stream ID strings
+ * @returns Map of streamId to BasicStreamInfo
+ */
+export const getBasicStreamInfoBatch = async (streamIds: string[]): Promise<Map<string, BasicStreamInfo>> => {
+    const results = new Map<string, BasicStreamInfo>();
+    
+    if (!flightClient) {
+        logger.warn("flightClient not available for getBasicStreamInfoBatch");
+        return results;
+    }
+
+    if (streamIds.length === 0) {
+        return results;
+    }
+
+    const startTime = Date.now();
+    try {
+        const streams = streamIds.map((id) => StreamID.fromString(id));
+        const queryResult = await flightClient.query(batchLatestStreamStateQuery(streams));
+        const table = tableFromIPC(queryResult);
+        const rows = table.toArray();
+
+        for (const row of rows) {
+            try {
+                const state = JSON.parse(row.state);
+                const streamCid = row.stream_cid;
+                // Find the original streamId that matches this CID
+                const matchingStreamId = streamIds.find((id) => {
+                    const sid = StreamID.fromString(id);
+                    return sid.cid.toString() === streamCid;
+                });
+
+                if (matchingStreamId) {
+                    // Convert BigInt values to Numbers for JSON serialization
+                    const versionCount = typeof row.version_count === 'bigint' 
+                        ? Number(row.version_count) 
+                        : Number(row.version_count);
+                    const latestTimestamp = row.before != null 
+                        ? (typeof row.before === 'bigint' ? Number(row.before) : Number(row.before))
+                        : undefined;
+                    
+                    results.set(matchingStreamId, {
+                        id: matchingStreamId,
+                        owner: cleanupEip155Address(row.controller),
+                        manifest: state.manifest,
+                        versionCount,
+                        latestTimestamp,
+                    });
+                }
+            } catch (parseError) {
+                logger.warn({ row, error: parseError }, "Failed to parse row in batch query");
+            }
+        }
+
+        const totalTime = Date.now() - startTime;
+        logger.info(
+            { streamCount: streamIds.length, foundCount: results.size, totalTime },
+            "getBasicStreamInfoBatch completed",
+        );
+
+        return results;
+    } catch (error) {
+        const totalTime = Date.now() - startTime;
+        logger.warn(
+            { streamCount: streamIds.length, totalTime, error: serializeError(error as Error) },
+            "getBasicStreamInfoBatch failed",
+        );
+        return results;
+    }
+};
+
+/**
+ * Get basic stream info using flightClient - lightweight alternative to getCodexHistory.
+ * Only fetches the latest state and version count, not the full history.
+ * For multiple streams, use getBasicStreamInfoBatch instead.
+ *
+ * @param streamId - The stream ID string
+ * @returns Basic stream info or null if not found
+ */
+export const getBasicStreamInfo = async (streamId: string): Promise<BasicStreamInfo | null> => {
+    const results = await getBasicStreamInfoBatch([streamId]);
+    return results.get(streamId) ?? null;
 };
 
 /**
