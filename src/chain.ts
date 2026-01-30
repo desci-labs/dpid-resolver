@@ -1,6 +1,6 @@
 import { redisService } from "./redis.js";
 import parentLogger from "./logger.js";
-import { dpidAliasRegistry } from "./util/config.js";
+import { DPID_ENV, dpidAliasRegistry } from "./util/config.js";
 import type { DpidAliasRegistry } from "@desci-labs/desci-contracts/dist/typechain-types/DpidAliasRegistry.js";
 import { errWithCause } from "pino-std-serializers";
 
@@ -9,7 +9,7 @@ const logger = parentLogger.child({
     module: MODULE_PATH,
 });
 
-const dpidAliasCacheKey = (dpid: number) => `resolver-dpid-alias-${dpid}`;
+const dpidAliasCacheKey = (dpid: number) => `resolver-${DPID_ENV}-dpid-alias-${dpid}`;
 /* Cache bound aliases for a month as they are immutable */
 const BOUND_ALIAS_TTL = 60 * 60 * 24 * 30;
 
@@ -22,22 +22,18 @@ export const cachedDpidLookup = async (dpid: number): Promise<string | undefined
         return streamId;
     }
 
-    try {
-        streamId = await dpidAliasRegistry.registry(dpid);
-        // eth mappings return the empty type for unmapped entries
-        if (streamId && streamId !== "") {
-            logger.info({ dpid, streamId }, "Got stream for dpid from registry");
-            void redisService?.setToCache(dpidAliasCacheKey(dpid), streamId, BOUND_ALIAS_TTL);
-            return streamId;
-        }
-    } catch (e) {
-        logger.error({ dpid, error: errWithCause(e as Error) }, "Failed to lookup dPID on chain");
+    streamId = await dpidAliasRegistry.registry(dpid);
+    // eth mappings return the empty type for unmapped entries
+    if (streamId && streamId !== "") {
+        logger.info({ dpid, streamId }, "Got stream for dpid from registry");
+        void redisService?.setToCache(dpidAliasCacheKey(dpid), streamId, BOUND_ALIAS_TTL);
+        return streamId;
     }
 
     return undefined;
 };
 
-const legacyDpidCacheKey = (dpid: number) => `resolver-legacy-dpid-${dpid}`;
+const legacyDpidCacheKey = (dpid: number) => `resolver-${DPID_ENV}-legacy-dpid-${dpid}`;
 
 /* Cache legacy entries as well, this is OK since:
  * 1. legacy entries are never updated
@@ -82,7 +78,7 @@ export const cachedLegacyDpidLookup = async (
     return undefined;
 };
 
-const NEXT_DPID_CACHE_KEY = "resolver-next-dpid";
+const NEXT_DPID_CACHE_KEY = `resolver-${DPID_ENV}-next-dpid`;
 /* Prevent hitting the chain on every request, but balance with delay for showing new dPIDs */
 const NEXT_DPID_TTL = 60;
 
