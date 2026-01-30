@@ -4,6 +4,7 @@ import analytics, { LogEventType } from "../../../analytics.js";
 import { getCodexHistory, getBasicStreamInfo, getBasicStreamInfoBatch } from "../queries/history.js";
 import { getManifestMetadata, type ManifestMetadata } from "../../../util/manifests.js";
 import { cachedDpidLookup, cachedLegacyDpidLookup, cachedNextDpid } from "../../../chain.js";
+import { buildPagination, getPageIndices } from "../../../util/pagination.js";
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 
@@ -43,77 +44,6 @@ const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, dpidNumber: num
     });
 
     return Promise.race([wrappedPromise, timeoutPromise]);
-};
-
-/**
- * Helper function to build URL query parameters for pagination
- */
-const buildUrlParams = (options: {
-    sort?: string;
-    includeHistory?: boolean;
-    includeMetadata?: boolean;
-    fields?: string;
-}) => {
-    const { sort, includeHistory, includeMetadata, fields } = options;
-
-    const sortParam = sort !== "desc" ? "" : "&sort=desc";
-    const historyParam = includeHistory ? "&history=true" : "";
-    const metadataParam = includeMetadata ? "&metadata=true" : "";
-    const fieldsParam = includeMetadata && fields ? `&fields=${fields}` : "";
-
-    return { sortParam, historyParam, metadataParam, fieldsParam };
-};
-
-/**
- * Helper function to build pagination URLs
- */
-const buildPaginationUrl = (
-    baseUrl: string,
-    page: number,
-    size: number,
-    params: { sortParam: string; historyParam: string; metadataParam: string; fieldsParam: string },
-) => {
-    const { sortParam, historyParam, metadataParam, fieldsParam } = params;
-    return `${baseUrl}?page=${page}&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`;
-};
-
-/**
- * Helper function to build special pagination URLs (withHistory, withoutHistory, etc.)
- */
-const buildSpecialPaginationUrl = (
-    baseUrl: string,
-    page: number,
-    size: number,
-    sort: string,
-    type: "withHistory" | "withoutHistory" | "withMetadata" | "withoutMetadata",
-    metadataFields: string[],
-    currentMetadata?: boolean,
-    currentFields?: string,
-) => {
-    const sortParam = sort !== "desc" ? "" : "&sort=desc";
-
-    switch (type) {
-        case "withHistory": {
-            const metadataParamForHistory = currentMetadata ? "&metadata=true" : "";
-            const fieldsParamForHistory = currentMetadata && currentFields ? `&fields=${currentFields}` : "";
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}&history=true${metadataParamForHistory}${fieldsParamForHistory}`;
-        }
-        case "withoutHistory": {
-            const metadataParamForNoHistory = currentMetadata ? "&metadata=true" : "";
-            const fieldsParamForNoHistory = currentMetadata && currentFields ? `&fields=${currentFields}` : "";
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}${metadataParamForNoHistory}${fieldsParamForNoHistory}`;
-        }
-        case "withMetadata": {
-            const historyParamForMetadata = currentMetadata ? "&history=true" : "";
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}${historyParamForMetadata}&metadata=true&fields=${metadataFields.join(",")}`;
-        }
-        case "withoutMetadata": {
-            const historyParamForNoMetadata = currentMetadata ? "&history=true" : "";
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}${historyParamForNoMetadata}`;
-        }
-        default:
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}`;
-    }
 };
 
 interface VersionData {
@@ -487,100 +417,27 @@ export const dpidListHandler = async (
         }
         const totalDpids = Math.max(0, nextDpid - 1);
 
+        const paginationBaseUrl = `${req.protocol}://${req.get("host")}/api/v2/query/dpids`;
+
         if (totalDpids === 0) {
-            const paginationBaseUrl = `${req.protocol}://${req.get("host")}/api/v2/query/dpids`;
-            const urlParams = buildUrlParams({
+            const pagination = buildPagination(paginationBaseUrl, {
+                page,
+                size,
+                total: 0,
                 sort,
                 includeHistory,
                 includeMetadata,
-                fields: req.query.fields,
+                metadataFields,
             });
 
             return res.json({
                 dpids: [],
-                pagination: {
-                    page,
-                    size,
-                    total: 0,
-                    hasNext: false,
-                    hasPrev: false,
-                    links: {
-                        self: buildPaginationUrl(paginationBaseUrl, page, size, urlParams),
-                        first: buildPaginationUrl(paginationBaseUrl, 1, size, urlParams),
-                        prev: null,
-                        next: null,
-                        last: buildPaginationUrl(paginationBaseUrl, 1, size, urlParams),
-                        withHistory: includeHistory
-                            ? null
-                            : buildSpecialPaginationUrl(
-                                  paginationBaseUrl,
-                                  page,
-                                  size,
-                                  sort,
-                                  "withHistory",
-                                  metadataFields,
-                                  includeMetadata,
-                                  req.query.fields,
-                              ),
-                        withoutHistory: includeHistory
-                            ? buildSpecialPaginationUrl(
-                                  paginationBaseUrl,
-                                  page,
-                                  size,
-                                  sort,
-                                  "withoutHistory",
-                                  metadataFields,
-                                  includeMetadata,
-                                  req.query.fields,
-                              )
-                            : null,
-                        withMetadata: includeMetadata
-                            ? null
-                            : buildSpecialPaginationUrl(
-                                  paginationBaseUrl,
-                                  page,
-                                  size,
-                                  sort,
-                                  "withMetadata",
-                                  metadataFields,
-                                  includeHistory,
-                                  undefined,
-                              ),
-                        withoutMetadata: includeMetadata
-                            ? buildSpecialPaginationUrl(
-                                  paginationBaseUrl,
-                                  page,
-                                  size,
-                                  sort,
-                                  "withoutMetadata",
-                                  metadataFields,
-                                  includeHistory,
-                                  undefined,
-                              )
-                            : null,
-                    },
-                },
+                pagination,
             });
         }
 
-        // Step 2: Calculate pagination
-        const startDpid =
-            sort === "desc" ? Math.max(1, totalDpids - (page - 1) * size - size + 1) : (page - 1) * size + 1;
-
-        const endDpid =
-            sort === "desc" ? Math.max(1, totalDpids - (page - 1) * size) : Math.min(totalDpids, startDpid + size - 1);
-
-        // Step 3: Generate DPID numbers for this page
-        const dpidNumbers: number[] = [];
-        if (sort === "desc") {
-            for (let i = endDpid; i >= startDpid; i--) {
-                dpidNumbers.push(i);
-            }
-        } else {
-            for (let i = startDpid; i <= endDpid; i++) {
-                dpidNumbers.push(i);
-            }
-        }
+        // Step 2: Generate DPID numbers for this page using pagination helper
+        const dpidNumbers = getPageIndices({ page, size, total: totalDpids, sort });
 
         // Step 4: Optimized batch fetch using single FlightSQL query for Ceramic DPIDs
         const baseUrl = `${req.protocol}://${req.get("host")}`;
@@ -742,80 +599,19 @@ export const dpidListHandler = async (
             .sort((a, b) => (sort === "desc" ? b.dpid - a.dpid : a.dpid - b.dpid));
 
         // Step 6: Build response with pagination
-        const hasNext = sort === "desc" ? startDpid > 1 : endDpid < totalDpids;
-        const hasPrev = page > 1;
-
-        // Build pagination links with history parameter
-        const paginationBaseUrl = `${req.protocol}://${req.get("host")}/api/v2/query/dpids`;
-        const urlParams = buildUrlParams({
+        const pagination = buildPagination(paginationBaseUrl, {
+            page,
+            size,
+            total: totalDpids,
             sort,
             includeHistory,
             includeMetadata,
-            fields: req.query.fields,
+            metadataFields,
         });
-        const lastPage = Math.ceil(totalDpids / size);
 
         return res.json({
             dpids: resolvedDpids,
-            pagination: {
-                page,
-                size,
-                total: totalDpids,
-                hasNext,
-                hasPrev,
-                links: {
-                    self: buildPaginationUrl(paginationBaseUrl, page, size, urlParams),
-                    first: buildPaginationUrl(paginationBaseUrl, 1, size, urlParams),
-                    prev: hasPrev ? buildPaginationUrl(paginationBaseUrl, page - 1, size, urlParams) : null,
-                    next: hasNext ? buildPaginationUrl(paginationBaseUrl, page + 1, size, urlParams) : null,
-                    last: buildPaginationUrl(paginationBaseUrl, lastPage, size, urlParams),
-                    // Self-documenting: show both history options
-                    withHistory: includeHistory
-                        ? null
-                        : buildSpecialPaginationUrl(
-                              paginationBaseUrl,
-                              page,
-                              size,
-                              sort,
-                              "withHistory",
-                              metadataFields,
-                              includeMetadata,
-                              req.query.fields,
-                          ),
-                    withoutHistory: includeHistory
-                        ? buildSpecialPaginationUrl(
-                              paginationBaseUrl,
-                              page,
-                              size,
-                              sort,
-                              "withoutHistory",
-                              metadataFields,
-                              includeMetadata,
-                              req.query.fields,
-                          )
-                        : null,
-                    withMetadata: includeMetadata
-                        ? null
-                        : buildSpecialPaginationUrl(
-                              paginationBaseUrl,
-                              page,
-                              size,
-                              sort,
-                              "withMetadata",
-                              metadataFields,
-                          ),
-                    withoutMetadata: includeMetadata
-                        ? buildSpecialPaginationUrl(
-                              paginationBaseUrl,
-                              page,
-                              size,
-                              sort,
-                              "withoutMetadata",
-                              metadataFields,
-                          )
-                        : null,
-                },
-            },
+            pagination,
         });
     } catch (err) {
         const error = err as Error;
