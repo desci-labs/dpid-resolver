@@ -63,3 +63,68 @@ export const getManifest = async (cid: string): Promise<ResearchObjectV1 | undef
     }
     return parsedManifest;
 };
+
+// TypeScript type definitions - defined before usage
+export type ManifestMetadata = {
+    title?: string;
+    description?: string;
+    authors?: Array<{
+        name?: string;
+        orcid?: string;
+    }>;
+    keywords?: string[];
+    license?: string;
+    [key: string]: unknown; // Allow additional metadata fields
+};
+
+/**
+ * Fetch and parse manifest metadata from IPFS
+ */
+export const getManifestMetadata = async (
+    cid: string,
+    fields: string[] = ["title", "authors", "description", "keywords", "license"],
+): Promise<ManifestMetadata | null> => {
+    if (!cid || cid === "") return null;
+
+    try {
+        const manifest = await getManifest(cid);
+        if (!manifest) {
+            logger.warn({ cid }, "No manifest found, returning null metadata");
+            return null;
+        }
+
+        // Extract only the requested metadata fields
+        const metadata: ManifestMetadata = {};
+
+        if (fields.includes("title") && manifest.title) {
+            metadata.title = manifest.title;
+        }
+        if (fields.includes("description") && manifest.description) {
+            metadata.description = manifest.description;
+        }
+        if (fields.includes("license") && manifest.defaultLicense) {
+            metadata.license = manifest.defaultLicense;
+        }
+        if (fields.includes("keywords") && manifest.keywords && Array.isArray(manifest.keywords)) {
+            metadata.keywords = manifest.keywords;
+        }
+
+        // Extract authors from various possible formats
+        if (fields.includes("authors") && manifest.authors && Array.isArray(manifest.authors)) {
+            metadata.authors = manifest.authors
+                .map((author) => {
+                    const authorData: { name?: string; orcid?: string } = {};
+                    if (author.name) authorData.name = author.name;
+                    if (author.orcid) authorData.orcid = author.orcid;
+                    return authorData;
+                })
+                .filter((author: { name?: string; orcid?: string }) => author.name || author.orcid);
+        }
+
+        logger.info({ cid, fieldsRequested: fields, fieldsFound: Object.keys(metadata) }, "Fetched manifest metadata");
+        return metadata;
+    } catch (e) {
+        logger.warn({ cid }, "Failed to extract metadata from manifest");
+        return null;
+    }
+};

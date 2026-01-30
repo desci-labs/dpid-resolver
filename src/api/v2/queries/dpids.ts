@@ -1,8 +1,9 @@
 import type { Request, Response } from "express";
-import { dpidAliasRegistry } from "../../../util/config.js";
 import parentLogger from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
 import { getCodexHistory, getBasicStreamInfo, getBasicStreamInfoBatch } from "../queries/history.js";
+import { getManifestMetadata, type ManifestMetadata } from "../../../util/manifests.js";
+import { cachedDpidLookup, cachedLegacyDpidLookup, cachedNextDpid } from "../../../chain.js";
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 
@@ -18,14 +19,17 @@ type TimeoutResult<T> = { result: T; timedOut: false } | { result: null; timedOu
  * The timeout is properly cleaned up when the main promise resolves to prevent
  * spurious warning logs.
  */
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<TimeoutResult<T>> => {
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<TimeoutResult<T>> => {
     let timeoutHandle: NodeJS.Timeout | null = null;
     let didTimeout = false;
 
     const timeoutPromise = new Promise<TimeoutResult<T>>((resolve) => {
         timeoutHandle = setTimeout(() => {
             didTimeout = true;
-            logger.warn({ dpidNumber, timeoutMs }, "DPID lookup timed out, skipping this dpid to avoid blocking the batch");
+            logger.warn(
+                { dpidNumber, timeoutMs },
+                "DPID lookup timed out, skipping this dpid to avoid blocking the batch",
+            );
             resolve({ result: null, timedOut: true });
         }, timeoutMs);
     });
@@ -112,33 +116,6 @@ const buildSpecialPaginationUrl = (
     }
 };
 
-// TypeScript type definitions - defined before usage
-export type ManifestMetadata = {
-    title?: string;
-    description?: string;
-    authors?: Array<{
-        name?: string;
-        orcid?: string;
-    }>;
-    keywords?: string[];
-    license?: string;
-    [key: string]: unknown; // Allow additional metadata fields
-};
-
-// Internal interfaces for type safety
-interface ManifestData {
-    title?: string;
-    description?: string;
-    authors?: Array<{
-        name?: string;
-        orcid?: string;
-        [key: string]: unknown;
-    }>;
-    keywords?: string[];
-    license?: string;
-    [key: string]: unknown; // Allow additional metadata fields
-}
-
 interface VersionData {
     index: number;
     cid: string;
@@ -150,81 +127,6 @@ interface LegacyVersionEntry {
     1: { toNumber?: () => number } | number; // timestamp
     [key: string]: unknown;
 }
-
-/**
- * Fetch and parse manifest metadata from IPFS
- */
-const fetchManifestMetadata = async (
-    cid: string,
-    fields: string[] = ["title", "authors", "description", "keywords", "license"],
-): Promise<ManifestMetadata | null> => {
-    if (!cid || cid === "") return null;
-
-    const startTime = Date.now();
-    try {
-        // Use AbortController for timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-        // Use the same IPFS gateway as the resolver
-        const ipfsUrl = `https://ipfs.desci.com/ipfs/${cid}`;
-        const response = await fetch(ipfsUrl, {
-            signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            logger.warn({ cid, status: response.status }, "Failed to fetch manifest from IPFS");
-            return null;
-        }
-
-        const manifest = (await response.json()) as ManifestData;
-        const fetchTime = Date.now() - startTime;
-
-        // Extract only the requested metadata fields
-        const metadata: ManifestMetadata = {};
-
-        if (fields.includes("title") && manifest.title) {
-            metadata.title = manifest.title;
-        }
-        if (fields.includes("description") && manifest.description) {
-            metadata.description = manifest.description;
-        }
-        if (fields.includes("license") && manifest.license) {
-            metadata.license = manifest.license;
-        }
-        if (fields.includes("keywords") && manifest.keywords && Array.isArray(manifest.keywords)) {
-            metadata.keywords = manifest.keywords;
-        }
-
-        // Extract authors from various possible formats
-        if (fields.includes("authors") && manifest.authors && Array.isArray(manifest.authors)) {
-            metadata.authors = manifest.authors
-                .map((author) => {
-                    const authorData: { name?: string; orcid?: string } = {};
-                    if (author.name) authorData.name = author.name;
-                    if (author.orcid) authorData.orcid = author.orcid;
-                    return authorData;
-                })
-                .filter((author: { name?: string; orcid?: string }) => author.name || author.orcid);
-        }
-
-        logger.info(
-            { cid, fetchTime, fieldsRequested: fields, fieldsFound: Object.keys(metadata) },
-            "Fetched manifest metadata",
-        );
-        return metadata;
-    } catch (e) {
-        const fetchTime = Date.now() - startTime;
-        if ((e as Error).name === "AbortError") {
-            logger.warn({ cid, fetchTime }, "Manifest fetch timed out");
-        } else {
-            logger.warn({ cid, fetchTime, error: (e as Error).message }, "Failed to parse manifest metadata");
-        }
-        return null;
-    }
-};
 
 export type DpidVersion = {
     index: number;
@@ -300,7 +202,7 @@ const getLightweightDpidInfo = async (
     try {
         // First check if it has a Ceramic streamId
         const registryStart = Date.now();
-        const streamId = await dpidAliasRegistry.registry(dpidNumber);
+        const streamId = await cachedDpidLookup(dpidNumber);
         const registryTime = Date.now() - registryStart;
 
         if (streamId && streamId !== "") {
@@ -317,7 +219,7 @@ const getLightweightDpidInfo = async (
 
                     if (includeMetadata) {
                         const metadataStart = Date.now();
-                        metadata = (await fetchManifestMetadata(history.manifest, metadataFields)) || undefined;
+                        metadata = (await getManifestMetadata(history.manifest, metadataFields)) || undefined;
                         metadataTime = Date.now() - metadataStart;
                     }
 
@@ -384,10 +286,7 @@ const getLightweightDpidInfo = async (
 
                     if (!basicInfo) {
                         const totalTime = Date.now() - startTime;
-                        logger.warn(
-                            { dpidNumber, streamId, totalTime },
-                            "getBasicStreamInfo returned null",
-                        );
+                        logger.warn({ dpidNumber, streamId, totalTime }, "getBasicStreamInfo returned null");
                         return null;
                     }
 
@@ -396,7 +295,7 @@ const getLightweightDpidInfo = async (
 
                     if (includeMetadata) {
                         const metadataStart = Date.now();
-                        metadata = (await fetchManifestMetadata(basicInfo.manifest, metadataFields)) || undefined;
+                        metadata = (await getManifestMetadata(basicInfo.manifest, metadataFields)) || undefined;
                         metadataTime = Date.now() - metadataStart;
                     }
 
@@ -450,20 +349,14 @@ const getLightweightDpidInfo = async (
             // Legacy DPID - get from contract
             try {
                 const legacyStart = Date.now();
-                const legacyEntry = await dpidAliasRegistry.legacyLookup(dpidNumber);
+                const legacyEntry = await cachedLegacyDpidLookup(dpidNumber);
                 const legacyTime = Date.now() - legacyStart;
-
-                const owner = legacyEntry[0];
-                const versions = legacyEntry[1] || [];
-
-                if (!owner || versions.length === 0) {
-                    const totalTime = Date.now() - startTime;
-                    logger.warn(
-                        { dpidNumber, totalTime, legacyTime, includeHistory, includeMetadata },
-                        "Legacy DPID has no data",
-                    );
+                if (!legacyEntry) {
                     return null;
                 }
+
+                const owner = legacyEntry[0];
+                const versions = legacyEntry[1];
 
                 const latestCid = versions[versions.length - 1]?.[0] || "";
 
@@ -485,7 +378,7 @@ const getLightweightDpidInfo = async (
 
                 if (includeMetadata && latestCid) {
                     const metadataStart = Date.now();
-                    metadata = (await fetchManifestMetadata(latestCid, metadataFields)) || undefined;
+                    metadata = (await getManifestMetadata(latestCid, metadataFields)) || undefined;
                     metadataTime = Date.now() - metadataStart;
                 }
 
@@ -587,8 +480,11 @@ export const dpidListHandler = async (
 
     try {
         // Step 1: Get total DPID count (fast contract call)
-        const nextDpidBigNumber = await dpidAliasRegistry.nextDpid();
-        const nextDpid = nextDpidBigNumber.toNumber();
+        let nextDpid = await cachedNextDpid();
+        if (!nextDpid) {
+            logger.error({ nextDpid }, "Failed to get next dPID, listing will be empty");
+            nextDpid = 0;
+        }
         const totalDpids = Math.max(0, nextDpid - 1);
 
         if (totalDpids === 0) {
@@ -694,7 +590,7 @@ export const dpidListHandler = async (
         const registryStart = Date.now();
         const registryPromises = dpidNumbers.map(async (dpidNumber) => {
             try {
-                const streamId = await dpidAliasRegistry.registry(dpidNumber);
+                const streamId = await cachedDpidLookup(dpidNumber);
                 return { dpidNumber, streamId: streamId && streamId !== "" ? streamId : null };
             } catch {
                 return { dpidNumber, streamId: null };
@@ -708,18 +604,29 @@ export const dpidListHandler = async (
         const legacyDpids = registryResults.filter((r) => r.streamId === null);
 
         logger.info(
-            { dpidCount: dpidNumbers.length, ceramicCount: ceramicDpids.length, legacyCount: legacyDpids.length, registryTime },
+            {
+                dpidCount: dpidNumbers.length,
+                ceramicCount: ceramicDpids.length,
+                legacyCount: legacyDpids.length,
+                registryTime,
+            },
             "Registry lookup completed",
         );
 
         // Step 4b: Batch fetch all Ceramic DPIDs in ONE query (for basic info)
-        let ceramicInfoMap = new Map<string, { owner: string; manifest: string; versionCount: number; latestTimestamp: number | undefined }>();
+        let ceramicInfoMap = new Map<
+            string,
+            { owner: string; manifest: string; versionCount: number; latestTimestamp: number | undefined }
+        >();
         if (ceramicDpids.length > 0 && !includeHistory) {
             const streamIds = ceramicDpids.map((d) => d.streamId!);
             const infoStart = Date.now();
             ceramicInfoMap = await getBasicStreamInfoBatch(streamIds);
             const infoTime = Date.now() - infoStart;
-            logger.info({ streamCount: streamIds.length, foundCount: ceramicInfoMap.size, infoTime }, "Batch stream info completed");
+            logger.info(
+                { streamCount: streamIds.length, foundCount: ceramicInfoMap.size, infoTime },
+                "Batch stream info completed",
+            );
         }
 
         // Step 4c: For history requests or when batch fails, fall back to individual getLightweightDpidInfo
@@ -736,7 +643,7 @@ export const dpidListHandler = async (
         }> = [];
 
         // Process Ceramic DPIDs
-        for (const { dpidNumber, streamId } of ceramicDpids) {
+        const streamPromises = ceramicDpids.map(async ({ dpidNumber, streamId }) => {
             if (includeHistory) {
                 // Full history needed - use getLightweightDpidInfo
                 const result = await withTimeout(
@@ -753,7 +660,7 @@ export const dpidListHandler = async (
                 if (info) {
                     let metadata: ManifestMetadata | undefined;
                     if (includeMetadata) {
-                        metadata = (await fetchManifestMetadata(info.manifest, metadataFields)) || undefined;
+                        metadata = (await getManifestMetadata(info.manifest, metadataFields)) || undefined;
                     }
                     dpidInfos.push({
                         dpid: dpidNumber,
@@ -768,10 +675,10 @@ export const dpidListHandler = async (
                     });
                 }
             }
-        }
+        });
 
         // Process Legacy DPIDs
-        for (const { dpidNumber } of legacyDpids) {
+        const legacyPromises = legacyDpids.map(async ({ dpidNumber }) => {
             const result = await withTimeout(
                 getLightweightDpidInfo(dpidNumber, includeHistory, includeMetadata, metadataFields),
                 DPID_LOOKUP_TIMEOUT_MS,
@@ -780,7 +687,8 @@ export const dpidListHandler = async (
             if (!result.timedOut && result.result) {
                 dpidInfos.push(result.result);
             }
-        }
+        });
+        await Promise.all([...streamPromises, ...legacyPromises]);
 
         const batchTime = Date.now() - batchStart;
         logger.info(
@@ -831,7 +739,7 @@ export const dpidListHandler = async (
                 return result;
             })
             // Sort by dpid to maintain order (batch processing may have reordered)
-            .sort((a, b) => sort === "desc" ? b.dpid - a.dpid : a.dpid - b.dpid);
+            .sort((a, b) => (sort === "desc" ? b.dpid - a.dpid : a.dpid - b.dpid));
 
         // Step 6: Build response with pagination
         const hasNext = sort === "desc" ? startDpid > 1 : endDpid < totalDpids;
