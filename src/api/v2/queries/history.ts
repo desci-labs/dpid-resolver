@@ -209,7 +209,7 @@ export const historyQueryHandler = async (
     }
 };
 
-const getCodexHistories = async (streamIds: string[]): Promise<HistoryQueryResult[]> => {
+export const getCodexHistories = async (streamIds: string[]): Promise<HistoryQueryResult[]> => {
     if (streamIds.length === 0) return [];
 
     if (flightClient) {

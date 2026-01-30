@@ -1,10 +1,11 @@
 import type { Request, Response } from "express";
 import parentLogger from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
-import { getCodexHistory, getBasicStreamInfo, getBasicStreamInfoBatch } from "../queries/history.js";
+import { getCodexHistories, type HistoryQueryResult } from "../queries/history.js";
 import { getManifestMetadata, type ManifestMetadata } from "../../../util/manifests.js";
 import { cachedDpidLookup, cachedLegacyDpidLookup, cachedNextDpid } from "../../../chain.js";
 import { buildPagination, getPageIndices } from "../../../util/pagination.js";
+import { errWithCause } from "pino-std-serializers";
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 
@@ -50,6 +51,19 @@ interface VersionData {
     index: number;
     cid: string;
     time: number | undefined;
+}
+
+/** Internal representation of DPID info before transforming to API response */
+interface DpidInfo {
+    dpid: number;
+    owner: string;
+    latestCid: string;
+    versionCount: number;
+    source: "ceramic" | "legacy";
+    streamId: string;
+    latestTimestamp: number | undefined;
+    metadata?: ManifestMetadata;
+    versions: VersionData[];
 }
 
 interface LegacyVersionEntry {
@@ -120,255 +134,127 @@ export type DpidListQueryParams = {
 };
 
 /**
- * Lightweight DPID info lookup - only gets essential data without full history
+ * Convert a HistoryQueryResult to the internal dpidInfo format.
+ * Optionally includes full version history based on includeHistory flag.
  */
-const getLightweightDpidInfo = async (
+const historyToDpidInfo = (
+    history: HistoryQueryResult,
+    dpidNumber: number,
+    includeHistory: boolean,
+    metadata?: ManifestMetadata,
+): DpidInfo => {
+    const latestVersion = history.versions.at(-1);
+    return {
+        dpid: dpidNumber,
+        owner: history.owner,
+        latestCid: history.manifest,
+        versionCount: history.versions.length,
+        source: "ceramic" as const,
+        streamId: history.id,
+        latestTimestamp: latestVersion?.time ?? undefined,
+        metadata,
+        versions: includeHistory
+            ? history.versions.map((v, index) => ({
+                  index,
+                  cid: v.manifest,
+                  time: v.time,
+              }))
+            : [],
+    };
+};
+
+/**
+ * Fetch info for a Legacy DPID from the contract.
+ * Only used for DPIDs that have no Ceramic streamId.
+ */
+const getLegacyDpidInfo = async (
     dpidNumber: number,
     includeHistory: boolean = false,
     includeMetadata: boolean = false,
     metadataFields: string[] = ["title", "authors"],
-) => {
+): Promise<DpidInfo | null> => {
     const startTime = Date.now();
     try {
-        // First check if it has a Ceramic streamId
-        const registryStart = Date.now();
-        const streamId = await cachedDpidLookup(dpidNumber);
-        const registryTime = Date.now() - registryStart;
+        const legacyStart = Date.now();
+        const legacyEntry = await cachedLegacyDpidLookup(dpidNumber);
+        const legacyTime = Date.now() - legacyStart;
 
-        if (streamId && streamId !== "") {
-            // Ceramic DPID
-            if (includeHistory) {
-                // Full history fetch (slower)
-                try {
-                    const historyStart = Date.now();
-                    const history = await getCodexHistory(streamId);
-                    const historyTime = Date.now() - historyStart;
+        if (!legacyEntry) {
+            return null;
+        }
 
-                    let metadata: ManifestMetadata | undefined;
-                    let metadataTime = 0;
+        const owner = legacyEntry[0];
+        const versions = legacyEntry[1];
+        const latestCid = versions[versions.length - 1]?.[0] || "";
 
-                    if (includeMetadata) {
-                        const metadataStart = Date.now();
-                        metadata = (await getManifestMetadata(history.manifest, metadataFields)) || undefined;
-                        metadataTime = Date.now() - metadataStart;
-                    }
-
-                    const totalTime = Date.now() - startTime;
-                    // Extract latest timestamp from the most recent version
-                    // Normalize undefined/null to undefined for consistent API response
-                    const latestVersion = history.versions[history.versions.length - 1];
-                    const latestTimestamp = latestVersion?.time ?? undefined;
-
-                    logger.info(
-                        {
-                            dpidNumber,
-                            registryTime,
-                            historyTime,
-                            metadataTime,
-                            totalTime,
-                            versionCount: history.versions.length,
-                            latestTimestamp,
-                            includeHistory,
-                            includeMetadata,
-                            metadataFields: includeMetadata ? metadataFields : undefined,
-                        },
-                        "Ceramic DPID timing (with history)",
-                    );
-
-                    return {
-                        dpid: dpidNumber,
-                        owner: history.owner,
-                        latestCid: history.manifest,
-                        versionCount: history.versions.length,
-                        source: "ceramic" as const,
-                        streamId,
-                        latestTimestamp,
-                        metadata,
-                        // Include full version info
-                        versions: history.versions.map((v, index: number) => ({
-                            index,
-                            cid: v.manifest,
-                            time: v.time ?? undefined,
-                        })),
-                    };
-                } catch (e) {
-                    const totalTime = Date.now() - startTime;
-                    logger.warn(
-                        {
-                            dpidNumber,
-                            streamId,
-                            totalTime,
-                            includeHistory,
-                            includeMetadata,
-                            error: (e as Error).message,
-                        },
-                        "Failed to fetch Ceramic history",
-                    );
-                    return null;
-                }
+        // Extract latest timestamp from the most recent version
+        const latestVersionEntry = versions[versions.length - 1];
+        let latestTimestamp: number | undefined = undefined;
+        if (latestVersionEntry) {
+            if (latestVersionEntry.time?.toNumber) {
+                latestTimestamp = latestVersionEntry.time.toNumber();
             } else {
-                // Basic info only - use lightweight getBasicStreamInfo (flightClient)
-                // This only fetches latest state + version count, not full history
-                try {
-                    const infoStart = Date.now();
-                    const basicInfo = await getBasicStreamInfo(streamId);
-                    const infoTime = Date.now() - infoStart;
-
-                    if (!basicInfo) {
-                        const totalTime = Date.now() - startTime;
-                        logger.warn({ dpidNumber, streamId, totalTime }, "getBasicStreamInfo returned null");
-                        return null;
-                    }
-
-                    let metadata: ManifestMetadata | undefined;
-                    let metadataTime = 0;
-
-                    if (includeMetadata) {
-                        const metadataStart = Date.now();
-                        metadata = (await getManifestMetadata(basicInfo.manifest, metadataFields)) || undefined;
-                        metadataTime = Date.now() - metadataStart;
-                    }
-
-                    const totalTime = Date.now() - startTime;
-
-                    logger.info(
-                        {
-                            dpidNumber,
-                            registryTime,
-                            infoTime,
-                            metadataTime,
-                            totalTime,
-                            versionCount: basicInfo.versionCount,
-                            latestTimestamp: basicInfo.latestTimestamp,
-                            includeHistory,
-                            includeMetadata,
-                            metadataFields: includeMetadata ? metadataFields : undefined,
-                        },
-                        "Ceramic DPID timing (basic info via getBasicStreamInfo)",
-                    );
-
-                    return {
-                        dpid: dpidNumber,
-                        owner: basicInfo.owner,
-                        latestCid: basicInfo.manifest,
-                        versionCount: basicInfo.versionCount,
-                        source: "ceramic" as const,
-                        streamId,
-                        latestTimestamp: basicInfo.latestTimestamp,
-                        metadata,
-                        // No detailed version info when history=false
-                        versions: [],
-                    };
-                } catch (e) {
-                    const totalTime = Date.now() - startTime;
-                    logger.warn(
-                        {
-                            dpidNumber,
-                            streamId,
-                            totalTime,
-                            includeHistory,
-                            includeMetadata,
-                            error: (e as Error).message,
-                        },
-                        "Failed to fetch basic Ceramic info via getBasicStreamInfo",
-                    );
-                    return null;
-                }
-            }
-        } else {
-            // Legacy DPID - get from contract
-            try {
-                const legacyStart = Date.now();
-                const legacyEntry = await cachedLegacyDpidLookup(dpidNumber);
-                const legacyTime = Date.now() - legacyStart;
-                if (!legacyEntry) {
-                    return null;
-                }
-
-                const owner = legacyEntry[0];
-                const versions = legacyEntry[1];
-
-                const latestCid = versions[versions.length - 1]?.[0] || "";
-
-                // Extract latest timestamp from the most recent version
-                // Normalize undefined/null to undefined for consistent API response
-                const latestVersionEntry = versions[versions.length - 1];
-                let latestTimestamp: number | undefined = undefined;
-                if (latestVersionEntry) {
-                    if (latestVersionEntry.time?.toNumber) {
-                        latestTimestamp = latestVersionEntry.time.toNumber();
-                    } else {
-                        const rawTimestamp = (latestVersionEntry as unknown as LegacyVersionEntry)[1];
-                        latestTimestamp = typeof rawTimestamp === "number" ? rawTimestamp : undefined;
-                    }
-                }
-
-                let metadata: ManifestMetadata | undefined;
-                let metadataTime = 0;
-
-                if (includeMetadata && latestCid) {
-                    const metadataStart = Date.now();
-                    metadata = (await getManifestMetadata(latestCid, metadataFields)) || undefined;
-                    metadataTime = Date.now() - metadataStart;
-                }
-
-                const totalTime = Date.now() - startTime;
-                logger.info(
-                    {
-                        dpidNumber,
-                        registryTime,
-                        legacyTime,
-                        metadataTime,
-                        totalTime,
-                        versionCount: versions.length,
-                        latestTimestamp,
-                        includeHistory,
-                        includeMetadata,
-                        metadataFields: includeMetadata ? metadataFields : undefined,
-                    },
-                    "Legacy DPID timing",
-                );
-
-                return {
-                    dpid: dpidNumber,
-                    owner,
-                    latestCid,
-                    versionCount: versions.length,
-                    source: "legacy" as const,
-                    streamId: "",
-                    latestTimestamp,
-                    metadata,
-                    versions: includeHistory
-                        ? versions.map((v, index: number) => {
-                              let time: number | undefined = undefined;
-                              if (v.time?.toNumber) {
-                                  time = v.time.toNumber();
-                              } else {
-                                  const rawTime = (v as unknown as LegacyVersionEntry)[1];
-                                  time = typeof rawTime === "number" ? rawTime : undefined;
-                              }
-                              return {
-                                  index,
-                                  cid: v.cid || (v as unknown as LegacyVersionEntry)[0],
-                                  time,
-                              };
-                          })
-                        : [],
-                };
-            } catch (e) {
-                const totalTime = Date.now() - startTime;
-                logger.warn(
-                    { dpidNumber, totalTime, includeHistory, includeMetadata, error: (e as Error).message },
-                    "Failed to fetch legacy info",
-                );
-                return null;
+                const rawTimestamp = (latestVersionEntry as unknown as LegacyVersionEntry)[1];
+                latestTimestamp = typeof rawTimestamp === "number" ? rawTimestamp : undefined;
             }
         }
+
+        let metadata: ManifestMetadata | undefined;
+        let metadataTime = 0;
+
+        if (includeMetadata && latestCid) {
+            const metadataStart = Date.now();
+            metadata = (await getManifestMetadata(latestCid, metadataFields)) || undefined;
+            metadataTime = Date.now() - metadataStart;
+        }
+
+        const totalTime = Date.now() - startTime;
+        logger.info(
+            {
+                dpidNumber,
+                legacyTime,
+                metadataTime,
+                totalTime,
+                versionCount: versions.length,
+                latestTimestamp,
+                includeHistory,
+                includeMetadata,
+                metadataFields: includeMetadata ? metadataFields : undefined,
+            },
+            "Legacy DPID timing",
+        );
+
+        return {
+            dpid: dpidNumber,
+            owner,
+            latestCid,
+            versionCount: versions.length,
+            source: "legacy" as const,
+            streamId: "",
+            latestTimestamp,
+            metadata,
+            versions: includeHistory
+                ? versions.map((v, index: number) => {
+                      let time: number | undefined = undefined;
+                      if (v.time?.toNumber) {
+                          time = v.time.toNumber();
+                      } else {
+                          const rawTime = (v as unknown as LegacyVersionEntry)[1];
+                          time = typeof rawTime === "number" ? rawTime : undefined;
+                      }
+                      return {
+                          index,
+                          cid: v.cid || (v as unknown as LegacyVersionEntry)[0],
+                          time,
+                      };
+                  })
+                : [],
+        };
     } catch (e) {
         const totalTime = Date.now() - startTime;
         logger.warn(
             { dpidNumber, totalTime, includeHistory, includeMetadata, error: (e as Error).message },
-            "Failed to check DPID registry",
+            "Failed to fetch legacy DPID info",
         );
         return null;
     }
@@ -409,7 +295,7 @@ export const dpidListHandler = async (
     });
 
     try {
-        // Step 1: Get total DPID count (fast contract call)
+        // Get total DPID count to compute query ranges
         let nextDpid = await cachedNextDpid();
         if (!nextDpid) {
             logger.error({ nextDpid }, "Failed to get next dPID, listing will be empty");
@@ -436,14 +322,12 @@ export const dpidListHandler = async (
             });
         }
 
-        // Step 2: Generate DPID numbers for this page using pagination helper
+        // Generate DPID numbers for this page using pagination helper
         const dpidNumbers = getPageIndices({ page, size, total: totalDpids, sort });
-
-        // Step 4: Optimized batch fetch using single FlightSQL query for Ceramic DPIDs
         const baseUrl = `${req.protocol}://${req.get("host")}`;
         const batchStart = Date.now();
 
-        // Step 4a: Get all registry entries in parallel to identify Ceramic vs Legacy DPIDs
+        // Get all registry entries in parallel to identify Ceramic vs Legacy DPIDs
         const registryStart = Date.now();
         const registryPromises = dpidNumbers.map(async (dpidNumber) => {
             try {
@@ -470,82 +354,60 @@ export const dpidListHandler = async (
             "Registry lookup completed",
         );
 
-        // Step 4b: Batch fetch all Ceramic DPIDs in ONE query (for basic info)
-        let ceramicInfoMap = new Map<
-            string,
-            { owner: string; manifest: string; versionCount: number; latestTimestamp: number | undefined }
-        >();
-        if (ceramicDpids.length > 0 && !includeHistory) {
-            const streamIds = ceramicDpids.map((d) => d.streamId!);
-            const infoStart = Date.now();
-            ceramicInfoMap = await getBasicStreamInfoBatch(streamIds);
-            const infoTime = Date.now() - infoStart;
-            logger.info(
-                { streamCount: streamIds.length, foundCount: ceramicInfoMap.size, infoTime },
-                "Batch stream info completed",
-            );
+        // Step 4b: Fetch Ceramic and Legacy DPIDs concurrently
+        const dpidInfos: DpidInfo[] = [];
+
+        // Build streamId -> dpidNumber lookup for mapping results back
+        const streamIdToDpid = new Map<string, number>();
+        for (const { dpidNumber, streamId } of ceramicDpids) {
+            if (streamId) streamIdToDpid.set(streamId, dpidNumber);
         }
 
-        // Step 4c: For history requests or when batch fails, fall back to individual getLightweightDpidInfo
-        const dpidInfos: Array<{
-            dpid: number;
-            owner: string;
-            latestCid: string;
-            versionCount: number;
-            source: "ceramic" | "legacy";
-            streamId: string;
-            latestTimestamp: number | undefined;
-            metadata?: ManifestMetadata;
-            versions: VersionData[];
-        }> = [];
+        const streamIds = ceramicDpids.map((d) => d.streamId!);
 
-        // Process Ceramic DPIDs
-        const streamPromises = ceramicDpids.map(async ({ dpidNumber, streamId }) => {
-            if (includeHistory) {
-                // Full history needed - use getLightweightDpidInfo
+        // Process Ceramic DPIDs: batch fetch histories, then fetch metadata
+        const ceramicPromise = (async () => {
+            if (streamIds.length === 0) return;
+
+            const historyStart = Date.now();
+            const histories = await getCodexHistories(streamIds);
+            const historyTime = Date.now() - historyStart;
+            logger.info(
+                { streamCount: streamIds.length, foundCount: histories.length, historyTime, includeHistory },
+                "Batch Ceramic fetch completed",
+            );
+
+            await Promise.all(
+                histories.map(async (history) => {
+                    const dpidNumber = streamIdToDpid.get(history.id);
+                    if (dpidNumber === undefined) return;
+
+                    let metadata: ManifestMetadata | undefined;
+                    if (includeMetadata) {
+                        metadata = (await getManifestMetadata(history.manifest, metadataFields)) || undefined;
+                    }
+
+                    dpidInfos.push(historyToDpidInfo(history, dpidNumber, includeHistory, metadata));
+                }),
+            );
+        })();
+
+        // Process Legacy DPIDs: individual contract lookups with timeout
+        const legacyPromise = Promise.all(
+            legacyDpids.map(async ({ dpidNumber }) => {
                 const result = await withTimeout(
-                    getLightweightDpidInfo(dpidNumber, true, includeMetadata, metadataFields),
+                    getLegacyDpidInfo(dpidNumber, includeHistory, includeMetadata, metadataFields),
                     DPID_LOOKUP_TIMEOUT_MS,
                     dpidNumber,
                 );
                 if (!result.timedOut && result.result) {
                     dpidInfos.push(result.result);
                 }
-            } else {
-                // Use batch results
-                const info = ceramicInfoMap.get(streamId!);
-                if (info) {
-                    let metadata: ManifestMetadata | undefined;
-                    if (includeMetadata) {
-                        metadata = (await getManifestMetadata(info.manifest, metadataFields)) || undefined;
-                    }
-                    dpidInfos.push({
-                        dpid: dpidNumber,
-                        owner: info.owner,
-                        latestCid: info.manifest,
-                        versionCount: info.versionCount,
-                        source: "ceramic",
-                        streamId: streamId!,
-                        latestTimestamp: info.latestTimestamp,
-                        metadata,
-                        versions: [],
-                    });
-                }
-            }
-        });
+            }),
+        );
 
-        // Process Legacy DPIDs
-        const legacyPromises = legacyDpids.map(async ({ dpidNumber }) => {
-            const result = await withTimeout(
-                getLightweightDpidInfo(dpidNumber, includeHistory, includeMetadata, metadataFields),
-                DPID_LOOKUP_TIMEOUT_MS,
-                dpidNumber,
-            );
-            if (!result.timedOut && result.result) {
-                dpidInfos.push(result.result);
-            }
-        });
-        await Promise.all([...streamPromises, ...legacyPromises]);
+        // Wait for both to complete
+        await Promise.all([ceramicPromise, legacyPromise]);
 
         const batchTime = Date.now() - batchStart;
         logger.info(
@@ -615,7 +477,7 @@ export const dpidListHandler = async (
         });
     } catch (err) {
         const error = err as Error;
-        logger.error("Error fetching DPIDs", error.message);
+        logger.error({ url: req.url, error: errWithCause(error) }, "Error fetching DPIDs");
         return res.status(500).json({
             error: "Failed to fetch DPIDs",
             details: error.message,
