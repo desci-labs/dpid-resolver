@@ -16,7 +16,7 @@ describe("pagination utilities", () => {
             const result = buildQueryString({
                 page: 1,
                 size: 20,
-                sort: "asc",
+                sort: "desc",
                 includeHistory: false,
                 includeMetadata: false,
                 metadataFields: [],
@@ -24,23 +24,23 @@ describe("pagination utilities", () => {
             expect(result).toBe("page=1&size=20");
         });
 
-        it("should include sort=desc when sort is descending", () => {
+        it("should include sort=asc when sort is ascending", () => {
             const result = buildQueryString({
                 page: 1,
                 size: 20,
-                sort: "desc",
+                sort: "asc",
                 includeHistory: false,
                 includeMetadata: false,
                 metadataFields: [],
             });
-            expect(result).toBe("page=1&size=20&sort=desc");
+            expect(result).toBe("page=1&size=20&sort=asc");
         });
 
-        it("should not include sort parameter when ascending (default)", () => {
+        it("should not include sort parameter when descending (default)", () => {
             const result = buildQueryString({
                 page: 2,
                 size: 10,
-                sort: "asc",
+                sort: "desc",
                 includeHistory: false,
                 includeMetadata: false,
                 metadataFields: [],
@@ -52,7 +52,7 @@ describe("pagination utilities", () => {
             const result = buildQueryString({
                 page: 1,
                 size: 20,
-                sort: "asc",
+                sort: "desc",
                 includeHistory: true,
                 includeMetadata: false,
                 metadataFields: [],
@@ -64,7 +64,7 @@ describe("pagination utilities", () => {
             const result = buildQueryString({
                 page: 1,
                 size: 20,
-                sort: "asc",
+                sort: "desc",
                 includeHistory: false,
                 includeMetadata: true,
                 metadataFields: ["title", "authors"],
@@ -76,13 +76,13 @@ describe("pagination utilities", () => {
             const result = buildQueryString({
                 page: 3,
                 size: 50,
-                sort: "desc",
+                sort: "asc",
                 includeHistory: true,
                 includeMetadata: true,
                 metadataFields: ["title", "description", "keywords"],
             });
             expect(result).toBe(
-                "page=3&size=50&sort=desc&history=true&metadata=true&fields=title,description,keywords",
+                "page=3&size=50&sort=asc&history=true&metadata=true&fields=title,description,keywords",
             );
         });
 
@@ -90,7 +90,7 @@ describe("pagination utilities", () => {
             const result = buildQueryString({
                 page: 1,
                 size: 20,
-                sort: "asc",
+                sort: "desc",
                 includeHistory: false,
                 includeMetadata: true,
                 metadataFields: [],
@@ -104,7 +104,7 @@ describe("pagination utilities", () => {
             const result = buildPaginationUrl(baseUrl, {
                 page: 1,
                 size: 20,
-                sort: "asc",
+                sort: "desc",
                 includeHistory: false,
                 includeMetadata: false,
                 metadataFields: [],
@@ -116,13 +116,13 @@ describe("pagination utilities", () => {
             const result = buildPaginationUrl(baseUrl, {
                 page: 5,
                 size: 10,
-                sort: "desc",
+                sort: "asc",
                 includeHistory: true,
                 includeMetadata: true,
                 metadataFields: ["title"],
             });
             expect(result).toBe(
-                "https://example.com/api/v2/query/dpids?page=5&size=10&sort=desc&history=true&metadata=true&fields=title",
+                "https://example.com/api/v2/query/dpids?page=5&size=10&sort=asc&history=true&metadata=true&fields=title",
             );
         });
     });
@@ -324,14 +324,14 @@ describe("pagination utilities", () => {
                     page: 3,
                     size: 20,
                     total: 100,
-                    sort: "desc",
+                    sort: "asc",
                     includeHistory: true,
                     includeMetadata: false,
                     metadataFields: [],
                 });
                 expect(result.links.self).toContain("page=3");
                 expect(result.links.self).toContain("size=20");
-                expect(result.links.self).toContain("sort=desc");
+                expect(result.links.self).toContain("sort=asc");
                 expect(result.links.self).toContain("history=true");
             });
 
