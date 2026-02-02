@@ -1,9 +1,11 @@
 import type { Request, Response } from "express";
-import { dpidAliasRegistry, getCeramicClient } from "../../../util/config.js";
 import parentLogger from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
-import { getCodexHistory } from "../queries/history.js";
-import { streams } from "@desci-labs/desci-codex-lib";
+import { getCodexHistories, type HistoryQueryResult } from "../queries/history.js";
+import { getManifestMetadata, type ManifestMetadata } from "../../../util/manifests.js";
+import { cachedDpidLookup, cachedLegacyDpidLookup, cachedNextDpid } from "../../../chain.js";
+import { buildPagination, getPageIndices } from "../../../util/pagination.js";
+import { errWithCause } from "pino-std-serializers";
 
 const logger = parentLogger.child({ module: "api/v2/queries/dpids" });
 
@@ -19,14 +21,17 @@ type TimeoutResult<T> = { result: T; timedOut: false } | { result: null; timedOu
  * The timeout is properly cleaned up when the main promise resolves to prevent
  * spurious warning logs.
  */
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<TimeoutResult<T>> => {
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<TimeoutResult<T>> => {
     let timeoutHandle: NodeJS.Timeout | null = null;
     let didTimeout = false;
 
     const timeoutPromise = new Promise<TimeoutResult<T>>((resolve) => {
         timeoutHandle = setTimeout(() => {
             didTimeout = true;
-            logger.warn({ dpidNumber, timeoutMs }, "DPID lookup timed out, skipping this dpid to avoid blocking the batch");
+            logger.warn(
+                { dpidNumber, timeoutMs },
+                "DPID lookup timed out, skipping this dpid to avoid blocking the batch",
+            );
             resolve({ result: null, timedOut: true });
         }, timeoutMs);
     });
@@ -42,108 +47,23 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, dpidNumber: numb
     return Promise.race([wrappedPromise, timeoutPromise]);
 };
 
-/**
- * Helper function to build URL query parameters for pagination
- */
-const buildUrlParams = (options: {
-    sort?: string;
-    includeHistory?: boolean;
-    includeMetadata?: boolean;
-    fields?: string;
-}) => {
-    const { sort, includeHistory, includeMetadata, fields } = options;
-
-    const sortParam = sort !== "desc" ? "" : "&sort=desc";
-    const historyParam = includeHistory ? "&history=true" : "";
-    const metadataParam = includeMetadata ? "&metadata=true" : "";
-    const fieldsParam = includeMetadata && fields ? `&fields=${fields}` : "";
-
-    return { sortParam, historyParam, metadataParam, fieldsParam };
-};
-
-/**
- * Helper function to build pagination URLs
- */
-const buildPaginationUrl = (
-    baseUrl: string,
-    page: number,
-    size: number,
-    params: { sortParam: string; historyParam: string; metadataParam: string; fieldsParam: string },
-) => {
-    const { sortParam, historyParam, metadataParam, fieldsParam } = params;
-    return `${baseUrl}?page=${page}&size=${size}${sortParam}${historyParam}${metadataParam}${fieldsParam}`;
-};
-
-/**
- * Helper function to build special pagination URLs (withHistory, withoutHistory, etc.)
- */
-const buildSpecialPaginationUrl = (
-    baseUrl: string,
-    page: number,
-    size: number,
-    sort: string,
-    type: "withHistory" | "withoutHistory" | "withMetadata" | "withoutMetadata",
-    metadataFields: string[],
-    currentMetadata?: boolean,
-    currentFields?: string,
-) => {
-    const sortParam = sort !== "desc" ? "" : "&sort=desc";
-
-    switch (type) {
-        case "withHistory": {
-            const metadataParamForHistory = currentMetadata ? "&metadata=true" : "";
-            const fieldsParamForHistory = currentMetadata && currentFields ? `&fields=${currentFields}` : "";
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}&history=true${metadataParamForHistory}${fieldsParamForHistory}`;
-        }
-        case "withoutHistory": {
-            const metadataParamForNoHistory = currentMetadata ? "&metadata=true" : "";
-            const fieldsParamForNoHistory = currentMetadata && currentFields ? `&fields=${currentFields}` : "";
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}${metadataParamForNoHistory}${fieldsParamForNoHistory}`;
-        }
-        case "withMetadata": {
-            const historyParamForMetadata = currentMetadata ? "&history=true" : "";
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}${historyParamForMetadata}&metadata=true&fields=${metadataFields.join(",")}`;
-        }
-        case "withoutMetadata": {
-            const historyParamForNoMetadata = currentMetadata ? "&history=true" : "";
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}${historyParamForNoMetadata}`;
-        }
-        default:
-            return `${baseUrl}?page=${page}&size=${size}${sortParam}`;
-    }
-};
-
-// TypeScript type definitions - defined before usage
-export type ManifestMetadata = {
-    title?: string;
-    description?: string;
-    authors?: Array<{
-        name?: string;
-        orcid?: string;
-    }>;
-    keywords?: string[];
-    license?: string;
-    [key: string]: unknown; // Allow additional metadata fields
-};
-
-// Internal interfaces for type safety
-interface ManifestData {
-    title?: string;
-    description?: string;
-    authors?: Array<{
-        name?: string;
-        orcid?: string;
-        [key: string]: unknown;
-    }>;
-    keywords?: string[];
-    license?: string;
-    [key: string]: unknown; // Allow additional metadata fields
-}
-
 interface VersionData {
     index: number;
     cid: string;
     time: number | undefined;
+}
+
+/** Internal representation of DPID info before transforming to API response */
+interface DpidInfo {
+    dpid: number;
+    owner: string;
+    latestCid: string;
+    versionCount: number;
+    source: "ceramic" | "legacy";
+    streamId: string;
+    latestTimestamp: number | undefined;
+    metadata?: ManifestMetadata;
+    versions: VersionData[];
 }
 
 interface LegacyVersionEntry {
@@ -151,81 +71,6 @@ interface LegacyVersionEntry {
     1: { toNumber?: () => number } | number; // timestamp
     [key: string]: unknown;
 }
-
-/**
- * Fetch and parse manifest metadata from IPFS
- */
-const fetchManifestMetadata = async (
-    cid: string,
-    fields: string[] = ["title", "authors", "description", "keywords", "license"],
-): Promise<ManifestMetadata | null> => {
-    if (!cid || cid === "") return null;
-
-    const startTime = Date.now();
-    try {
-        // Use AbortController for timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-        // Use the same IPFS gateway as the resolver
-        const ipfsUrl = `https://ipfs.desci.com/ipfs/${cid}`;
-        const response = await fetch(ipfsUrl, {
-            signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            logger.warn({ cid, status: response.status }, "Failed to fetch manifest from IPFS");
-            return null;
-        }
-
-        const manifest = (await response.json()) as ManifestData;
-        const fetchTime = Date.now() - startTime;
-
-        // Extract only the requested metadata fields
-        const metadata: ManifestMetadata = {};
-
-        if (fields.includes("title") && manifest.title) {
-            metadata.title = manifest.title;
-        }
-        if (fields.includes("description") && manifest.description) {
-            metadata.description = manifest.description;
-        }
-        if (fields.includes("license") && manifest.license) {
-            metadata.license = manifest.license;
-        }
-        if (fields.includes("keywords") && manifest.keywords && Array.isArray(manifest.keywords)) {
-            metadata.keywords = manifest.keywords;
-        }
-
-        // Extract authors from various possible formats
-        if (fields.includes("authors") && manifest.authors && Array.isArray(manifest.authors)) {
-            metadata.authors = manifest.authors
-                .map((author) => {
-                    const authorData: { name?: string; orcid?: string } = {};
-                    if (author.name) authorData.name = author.name;
-                    if (author.orcid) authorData.orcid = author.orcid;
-                    return authorData;
-                })
-                .filter((author: { name?: string; orcid?: string }) => author.name || author.orcid);
-        }
-
-        logger.info(
-            { cid, fetchTime, fieldsRequested: fields, fieldsFound: Object.keys(metadata) },
-            "Fetched manifest metadata",
-        );
-        return metadata;
-    } catch (e) {
-        const fetchTime = Date.now() - startTime;
-        if ((e as Error).name === "AbortError") {
-            logger.warn({ cid, fetchTime }, "Manifest fetch timed out");
-        } else {
-            logger.warn({ cid, fetchTime, error: (e as Error).message }, "Failed to parse manifest metadata");
-        }
-        return null;
-    }
-};
 
 export type DpidVersion = {
     index: number;
@@ -289,273 +134,127 @@ export type DpidListQueryParams = {
 };
 
 /**
- * Lightweight DPID info lookup - only gets essential data without full history
+ * Convert a HistoryQueryResult to the internal dpidInfo format.
+ * Optionally includes full version history based on includeHistory flag.
  */
-const getLightweightDpidInfo = async (
+const historyToDpidInfo = (
+    history: HistoryQueryResult,
+    dpidNumber: number,
+    includeHistory: boolean,
+    metadata?: ManifestMetadata,
+): DpidInfo => {
+    const latestVersion = history.versions.at(-1);
+    return {
+        dpid: dpidNumber,
+        owner: history.owner,
+        latestCid: history.manifest,
+        versionCount: history.versions.length,
+        source: "ceramic" as const,
+        streamId: history.id,
+        latestTimestamp: latestVersion?.time ?? undefined,
+        metadata,
+        versions: includeHistory
+            ? history.versions.map((v, index) => ({
+                  index,
+                  cid: v.manifest,
+                  time: v.time,
+              }))
+            : [],
+    };
+};
+
+/**
+ * Fetch info for a Legacy DPID from the contract.
+ * Only used for DPIDs that have no Ceramic streamId.
+ */
+const getLegacyDpidInfo = async (
     dpidNumber: number,
     includeHistory: boolean = false,
     includeMetadata: boolean = false,
     metadataFields: string[] = ["title", "authors"],
-) => {
+): Promise<DpidInfo | null> => {
     const startTime = Date.now();
     try {
-        // First check if it has a Ceramic streamId
-        const registryStart = Date.now();
-        const streamId = await dpidAliasRegistry.registry(dpidNumber);
-        const registryTime = Date.now() - registryStart;
+        const legacyStart = Date.now();
+        const legacyEntry = await cachedLegacyDpidLookup(dpidNumber);
+        const legacyTime = Date.now() - legacyStart;
 
-        if (streamId && streamId !== "") {
-            // Ceramic DPID
-            if (includeHistory) {
-                // Full history fetch (slower)
-                try {
-                    const historyStart = Date.now();
-                    const history = await getCodexHistory(streamId);
-                    const historyTime = Date.now() - historyStart;
+        if (!legacyEntry) {
+            return null;
+        }
 
-                    let metadata: ManifestMetadata | undefined;
-                    let metadataTime = 0;
+        const owner = legacyEntry[0];
+        const versions = legacyEntry[1];
+        const latestCid = versions[versions.length - 1]?.[0] || "";
 
-                    if (includeMetadata) {
-                        const metadataStart = Date.now();
-                        metadata = (await fetchManifestMetadata(history.manifest, metadataFields)) || undefined;
-                        metadataTime = Date.now() - metadataStart;
-                    }
-
-                    const totalTime = Date.now() - startTime;
-                    // Extract latest timestamp from the most recent version
-                    // Normalize undefined/null to undefined for consistent API response
-                    const latestVersion = history.versions[history.versions.length - 1];
-                    const latestTimestamp = latestVersion?.time ?? undefined;
-
-                    logger.info(
-                        {
-                            dpidNumber,
-                            registryTime,
-                            historyTime,
-                            metadataTime,
-                            totalTime,
-                            versionCount: history.versions.length,
-                            latestTimestamp,
-                            includeHistory,
-                            includeMetadata,
-                            metadataFields: includeMetadata ? metadataFields : undefined,
-                        },
-                        "Ceramic DPID timing (with history)",
-                    );
-
-                    return {
-                        dpid: dpidNumber,
-                        owner: history.owner,
-                        latestCid: history.manifest,
-                        versionCount: history.versions.length,
-                        source: "ceramic" as const,
-                        streamId,
-                        latestTimestamp,
-                        metadata,
-                        // Include full version info
-                        versions: history.versions.map((v, index: number) => ({
-                            index,
-                            cid: v.manifest,
-                            time: v.time ?? undefined,
-                        })),
-                    };
-                } catch (e) {
-                    const totalTime = Date.now() - startTime;
-                    logger.warn(
-                        {
-                            dpidNumber,
-                            streamId,
-                            totalTime,
-                            includeHistory,
-                            includeMetadata,
-                            error: (e as Error).message,
-                        },
-                        "Failed to fetch Ceramic history",
-                    );
-                    return null;
-                }
+        // Extract latest timestamp from the most recent version
+        const latestVersionEntry = versions[versions.length - 1];
+        let latestTimestamp: number | undefined = undefined;
+        if (latestVersionEntry) {
+            if (latestVersionEntry.time?.toNumber) {
+                latestTimestamp = latestVersionEntry.time.toNumber();
             } else {
-                // Basic info only (much faster)
-                try {
-                    const ceramic = getCeramicClient();
-                    const historyStart = Date.now();
-
-                    // Just load the stream for basic info, don't fetch full history
-                    const streamID = streams.StreamID.fromString(streamId);
-                    const stream = await ceramic.loadStream(streamID);
-
-                    const historyTime = Date.now() - historyStart;
-
-                    let metadata: ManifestMetadata | undefined;
-                    let metadataTime = 0;
-
-                    if (includeMetadata) {
-                        const metadataStart = Date.now();
-                        metadata =
-                            (await fetchManifestMetadata(stream.content.manifest as string, metadataFields)) ||
-                            undefined;
-                        metadataTime = Date.now() - metadataStart;
-                    }
-
-                    const totalTime = Date.now() - startTime;
-
-                    // Get basic version count from log without processing each commit
-                    const commitCount = stream.state.log.filter(({ type }) => type !== 2).length;
-
-                    // Get the latest timestamp from the most recent log entry
-                    // We look for the last log entry with a timestamp (anchored commits have timestamps)
-                    const latestLogEntry = stream.state.log
-                        .slice()
-                        .reverse()
-                        .find((entry) => entry.timestamp !== undefined && entry.timestamp !== null);
-                    // Normalize undefined/null to undefined for consistent API response
-                    const latestTimestamp = latestLogEntry?.timestamp ?? undefined;
-
-                    logger.info(
-                        {
-                            dpidNumber,
-                            registryTime,
-                            historyTime,
-                            metadataTime,
-                            totalTime,
-                            versionCount: commitCount,
-                            latestTimestamp,
-                            includeHistory,
-                            includeMetadata,
-                            metadataFields: includeMetadata ? metadataFields : undefined,
-                        },
-                        "Ceramic DPID timing (basic info only)",
-                    );
-
-                    return {
-                        dpid: dpidNumber,
-                        owner: (stream.state.metadata.controllers[0] as string).replace(/^did:pkh:eip155:\d+:/, ""),
-                        latestCid: stream.content.manifest as string,
-                        versionCount: commitCount,
-                        source: "ceramic" as const,
-                        streamId,
-                        latestTimestamp,
-                        metadata,
-                        // No detailed version info when history=false
-                        versions: [],
-                    };
-                } catch (e) {
-                    const totalTime = Date.now() - startTime;
-                    logger.warn(
-                        {
-                            dpidNumber,
-                            streamId,
-                            totalTime,
-                            includeHistory,
-                            includeMetadata,
-                            error: (e as Error).message,
-                        },
-                        "Failed to fetch basic Ceramic info",
-                    );
-                    return null;
-                }
-            }
-        } else {
-            // Legacy DPID - get from contract
-            try {
-                const legacyStart = Date.now();
-                const legacyEntry = await dpidAliasRegistry.legacyLookup(dpidNumber);
-                const legacyTime = Date.now() - legacyStart;
-
-                const owner = legacyEntry[0];
-                const versions = legacyEntry[1] || [];
-
-                if (!owner || versions.length === 0) {
-                    const totalTime = Date.now() - startTime;
-                    logger.warn(
-                        { dpidNumber, totalTime, legacyTime, includeHistory, includeMetadata },
-                        "Legacy DPID has no data",
-                    );
-                    return null;
-                }
-
-                const latestCid = versions[versions.length - 1]?.[0] || "";
-
-                // Extract latest timestamp from the most recent version
-                // Normalize undefined/null to undefined for consistent API response
-                const latestVersionEntry = versions[versions.length - 1];
-                let latestTimestamp: number | undefined = undefined;
-                if (latestVersionEntry) {
-                    if (latestVersionEntry.time?.toNumber) {
-                        latestTimestamp = latestVersionEntry.time.toNumber();
-                    } else {
-                        const rawTimestamp = (latestVersionEntry as unknown as LegacyVersionEntry)[1];
-                        latestTimestamp = typeof rawTimestamp === "number" ? rawTimestamp : undefined;
-                    }
-                }
-
-                let metadata: ManifestMetadata | undefined;
-                let metadataTime = 0;
-
-                if (includeMetadata && latestCid) {
-                    const metadataStart = Date.now();
-                    metadata = (await fetchManifestMetadata(latestCid, metadataFields)) || undefined;
-                    metadataTime = Date.now() - metadataStart;
-                }
-
-                const totalTime = Date.now() - startTime;
-                logger.info(
-                    {
-                        dpidNumber,
-                        registryTime,
-                        legacyTime,
-                        metadataTime,
-                        totalTime,
-                        versionCount: versions.length,
-                        latestTimestamp,
-                        includeHistory,
-                        includeMetadata,
-                        metadataFields: includeMetadata ? metadataFields : undefined,
-                    },
-                    "Legacy DPID timing",
-                );
-
-                return {
-                    dpid: dpidNumber,
-                    owner,
-                    latestCid,
-                    versionCount: versions.length,
-                    source: "legacy" as const,
-                    streamId: "",
-                    latestTimestamp,
-                    metadata,
-                    versions: includeHistory
-                        ? versions.map((v, index: number) => {
-                              let time: number | undefined = undefined;
-                              if (v.time?.toNumber) {
-                                  time = v.time.toNumber();
-                              } else {
-                                  const rawTime = (v as unknown as LegacyVersionEntry)[1];
-                                  time = typeof rawTime === "number" ? rawTime : undefined;
-                              }
-                              return {
-                                  index,
-                                  cid: v.cid || (v as unknown as LegacyVersionEntry)[0],
-                                  time,
-                              };
-                          })
-                        : [],
-                };
-            } catch (e) {
-                const totalTime = Date.now() - startTime;
-                logger.warn(
-                    { dpidNumber, totalTime, includeHistory, includeMetadata, error: (e as Error).message },
-                    "Failed to fetch legacy info",
-                );
-                return null;
+                const rawTimestamp = (latestVersionEntry as unknown as LegacyVersionEntry)[1];
+                latestTimestamp = typeof rawTimestamp === "number" ? rawTimestamp : undefined;
             }
         }
+
+        let metadata: ManifestMetadata | undefined;
+        let metadataTime = 0;
+
+        if (includeMetadata && latestCid) {
+            const metadataStart = Date.now();
+            metadata = (await getManifestMetadata(latestCid, metadataFields)) || undefined;
+            metadataTime = Date.now() - metadataStart;
+        }
+
+        const totalTime = Date.now() - startTime;
+        logger.info(
+            {
+                dpidNumber,
+                legacyTime,
+                metadataTime,
+                totalTime,
+                versionCount: versions.length,
+                latestTimestamp,
+                includeHistory,
+                includeMetadata,
+                metadataFields: includeMetadata ? metadataFields : undefined,
+            },
+            "Legacy DPID timing",
+        );
+
+        return {
+            dpid: dpidNumber,
+            owner,
+            latestCid,
+            versionCount: versions.length,
+            source: "legacy" as const,
+            streamId: "",
+            latestTimestamp,
+            metadata,
+            versions: includeHistory
+                ? versions.map((v, index: number) => {
+                      let time: number | undefined = undefined;
+                      if (v.time?.toNumber) {
+                          time = v.time.toNumber();
+                      } else {
+                          const rawTime = (v as unknown as LegacyVersionEntry)[1];
+                          time = typeof rawTime === "number" ? rawTime : undefined;
+                      }
+                      return {
+                          index,
+                          cid: v.cid || (v as unknown as LegacyVersionEntry)[0],
+                          time,
+                      };
+                  })
+                : [],
+        };
     } catch (e) {
         const totalTime = Date.now() - startTime;
         logger.warn(
             { dpidNumber, totalTime, includeHistory, includeMetadata, error: (e as Error).message },
-            "Failed to check DPID registry",
+            "Failed to fetch legacy DPID info",
         );
         return null;
     }
@@ -596,151 +295,135 @@ export const dpidListHandler = async (
     });
 
     try {
-        // Step 1: Get total DPID count (fast contract call)
-        const nextDpidBigNumber = await dpidAliasRegistry.nextDpid();
-        const nextDpid = nextDpidBigNumber.toNumber();
+        // Get total DPID count to compute query ranges
+        let nextDpid = await cachedNextDpid();
+        if (!nextDpid) {
+            logger.error({ nextDpid }, "Failed to get next dPID, listing will be empty");
+            nextDpid = 0;
+        }
         const totalDpids = Math.max(0, nextDpid - 1);
 
+        const paginationBaseUrl = `${req.protocol}://${req.get("host")}/api/v2/query/dpids`;
+
         if (totalDpids === 0) {
-            const paginationBaseUrl = `${req.protocol}://${req.get("host")}/api/v2/query/dpids`;
-            const urlParams = buildUrlParams({
+            const pagination = buildPagination(paginationBaseUrl, {
+                page,
+                size,
+                total: 0,
                 sort,
                 includeHistory,
                 includeMetadata,
-                fields: req.query.fields,
+                metadataFields,
             });
 
             return res.json({
                 dpids: [],
-                pagination: {
-                    page,
-                    size,
-                    total: 0,
-                    hasNext: false,
-                    hasPrev: false,
-                    links: {
-                        self: buildPaginationUrl(paginationBaseUrl, page, size, urlParams),
-                        first: buildPaginationUrl(paginationBaseUrl, 1, size, urlParams),
-                        prev: null,
-                        next: null,
-                        last: buildPaginationUrl(paginationBaseUrl, 1, size, urlParams),
-                        withHistory: includeHistory
-                            ? null
-                            : buildSpecialPaginationUrl(
-                                  paginationBaseUrl,
-                                  page,
-                                  size,
-                                  sort,
-                                  "withHistory",
-                                  metadataFields,
-                                  includeMetadata,
-                                  req.query.fields,
-                              ),
-                        withoutHistory: includeHistory
-                            ? buildSpecialPaginationUrl(
-                                  paginationBaseUrl,
-                                  page,
-                                  size,
-                                  sort,
-                                  "withoutHistory",
-                                  metadataFields,
-                                  includeMetadata,
-                                  req.query.fields,
-                              )
-                            : null,
-                        withMetadata: includeMetadata
-                            ? null
-                            : buildSpecialPaginationUrl(
-                                  paginationBaseUrl,
-                                  page,
-                                  size,
-                                  sort,
-                                  "withMetadata",
-                                  metadataFields,
-                                  includeHistory,
-                                  undefined,
-                              ),
-                        withoutMetadata: includeMetadata
-                            ? buildSpecialPaginationUrl(
-                                  paginationBaseUrl,
-                                  page,
-                                  size,
-                                  sort,
-                                  "withoutMetadata",
-                                  metadataFields,
-                                  includeHistory,
-                                  undefined,
-                              )
-                            : null,
-                    },
-                },
+                pagination,
             });
         }
 
-        // Step 2: Calculate pagination
-        const startDpid =
-            sort === "desc" ? Math.max(1, totalDpids - (page - 1) * size - size + 1) : (page - 1) * size + 1;
-
-        const endDpid =
-            sort === "desc" ? Math.max(1, totalDpids - (page - 1) * size) : Math.min(totalDpids, startDpid + size - 1);
-
-        // Step 3: Generate DPID numbers for this page
-        const dpidNumbers: number[] = [];
-        if (sort === "desc") {
-            for (let i = endDpid; i >= startDpid; i--) {
-                dpidNumbers.push(i);
-            }
-        } else {
-            for (let i = startDpid; i <= endDpid; i++) {
-                dpidNumbers.push(i);
-            }
-        }
-
-        // Step 4: Batch fetch lightweight DPID info with timeout protection
-        // Each dpid has a timeout to prevent one slow/broken dpid from blocking the entire batch
+        // Generate DPID numbers for this page using pagination helper
+        const dpidNumbers = getPageIndices({ page, size, total: totalDpids, sort });
         const baseUrl = `${req.protocol}://${req.get("host")}`;
         const batchStart = Date.now();
-        logger.info(
-            { dpidCount: dpidNumbers.length, timeoutMs: DPID_LOOKUP_TIMEOUT_MS },
-            "Fetching lightweight DPID info in parallel with timeout protection",
-        );
 
-        const dpidPromises = dpidNumbers.map((dpidNumber) =>
-            withTimeout(
-                getLightweightDpidInfo(dpidNumber, includeHistory, includeMetadata, metadataFields),
-                DPID_LOOKUP_TIMEOUT_MS,
-                dpidNumber,
-            ),
-        );
+        // Get all registry entries in parallel to identify Ceramic vs Legacy DPIDs
+        const registryStart = Date.now();
+        const registryPromises = dpidNumbers.map(async (dpidNumber) => {
+            try {
+                const streamId = await cachedDpidLookup(dpidNumber);
+                return { dpidNumber, streamId: streamId && streamId !== "" ? streamId : null };
+            } catch {
+                return { dpidNumber, streamId: null };
+            }
+        });
+        const registryResults = await Promise.all(registryPromises);
+        const registryTime = Date.now() - registryStart;
 
-        const wrappedResults = await Promise.all(dpidPromises);
-        const batchTime = Date.now() - batchStart;
-
-        // Count timeouts vs other failures accurately
-        const timedOutCount = wrappedResults.filter((r) => r.timedOut).length;
-        const successCount = wrappedResults.filter((r) => !r.timedOut && r.result !== null).length;
-        const failedCount = wrappedResults.filter((r) => !r.timedOut && r.result === null).length;
+        // Separate Ceramic DPIDs from Legacy DPIDs
+        const ceramicDpids = registryResults.filter((r) => r.streamId !== null);
+        const legacyDpids = registryResults.filter((r) => r.streamId === null);
 
         logger.info(
             {
                 dpidCount: dpidNumbers.length,
-                successCount,
-                timedOutCount,
-                failedCount,
+                ceramicCount: ceramicDpids.length,
+                legacyCount: legacyDpids.length,
+                registryTime,
+            },
+            "Registry lookup completed",
+        );
+
+        // Step 4b: Fetch Ceramic and Legacy DPIDs concurrently
+        const dpidInfos: DpidInfo[] = [];
+
+        // Build streamId -> dpidNumber lookup for mapping results back
+        const streamIdToDpid = new Map<string, number>();
+        for (const { dpidNumber, streamId } of ceramicDpids) {
+            if (streamId) streamIdToDpid.set(streamId, dpidNumber);
+        }
+
+        const streamIds = ceramicDpids.map((d) => d.streamId!);
+
+        // Process Ceramic DPIDs: batch fetch histories, then fetch metadata
+        const ceramicPromise = (async () => {
+            if (streamIds.length === 0) return;
+
+            const historyStart = Date.now();
+            const histories = await getCodexHistories(streamIds);
+            const historyTime = Date.now() - historyStart;
+            logger.info(
+                { streamCount: streamIds.length, foundCount: histories.length, historyTime, includeHistory },
+                "Batch Ceramic fetch completed",
+            );
+
+            await Promise.all(
+                histories.map(async (history) => {
+                    const dpidNumber = streamIdToDpid.get(history.id);
+                    if (dpidNumber === undefined) return;
+
+                    let metadata: ManifestMetadata | undefined;
+                    if (includeMetadata) {
+                        metadata = (await getManifestMetadata(history.manifest, metadataFields)) || undefined;
+                    }
+
+                    dpidInfos.push(historyToDpidInfo(history, dpidNumber, includeHistory, metadata));
+                }),
+            );
+        })();
+
+        // Process Legacy DPIDs: individual contract lookups with timeout
+        const legacyPromise = Promise.all(
+            legacyDpids.map(async ({ dpidNumber }) => {
+                const result = await withTimeout(
+                    getLegacyDpidInfo(dpidNumber, includeHistory, includeMetadata, metadataFields),
+                    DPID_LOOKUP_TIMEOUT_MS,
+                    dpidNumber,
+                );
+                if (!result.timedOut && result.result) {
+                    dpidInfos.push(result.result);
+                }
+            }),
+        );
+
+        // Wait for both to complete
+        await Promise.all([ceramicPromise, legacyPromise]);
+
+        const batchTime = Date.now() - batchStart;
+        logger.info(
+            {
+                dpidCount: dpidNumbers.length,
+                successCount: dpidInfos.length,
+                failedCount: dpidNumbers.length - dpidInfos.length,
                 batchTime,
                 avgTimePerDpid: Math.round(batchTime / dpidNumbers.length),
             },
             "Batch DPID lookup completed",
         );
 
-        // Step 5: Transform to API format - extract successful results
-        const dpidInfos = wrappedResults
-            .filter((r) => !r.timedOut && r.result !== null)
-            .map((r) => r.result!);
-
+        // Step 5: Transform to API format
         const resolvedDpids = dpidInfos
             .map((info) => {
-                // Normalize latestTimestamp: ensure undefined/null becomes undefined
                 const latestTimestamp = info.latestTimestamp ?? undefined;
 
                 const baseResult = {
@@ -759,7 +442,6 @@ export const dpidListHandler = async (
 
                 const result: DpidQueryResult = { ...baseResult };
 
-                // Conditionally include versions field only when history is requested
                 if (includeHistory && info.versions.length > 0) {
                     result.versions = info.versions.map((v: VersionData) => ({
                         index: v.index,
@@ -769,93 +451,33 @@ export const dpidListHandler = async (
                     }));
                 }
 
-                // Conditionally include metadata field only when metadata is requested
                 if (includeMetadata && info.metadata) {
                     result.metadata = info.metadata;
                 }
 
                 return result;
-            });
+            })
+            // Sort by dpid to maintain order (batch processing may have reordered)
+            .sort((a, b) => (sort === "desc" ? b.dpid - a.dpid : a.dpid - b.dpid));
 
         // Step 6: Build response with pagination
-        const hasNext = sort === "desc" ? startDpid > 1 : endDpid < totalDpids;
-        const hasPrev = page > 1;
-
-        // Build pagination links with history parameter
-        const paginationBaseUrl = `${req.protocol}://${req.get("host")}/api/v2/query/dpids`;
-        const urlParams = buildUrlParams({
+        const pagination = buildPagination(paginationBaseUrl, {
+            page,
+            size,
+            total: totalDpids,
             sort,
             includeHistory,
             includeMetadata,
-            fields: req.query.fields,
+            metadataFields,
         });
-        const lastPage = Math.ceil(totalDpids / size);
 
         return res.json({
             dpids: resolvedDpids,
-            pagination: {
-                page,
-                size,
-                total: totalDpids,
-                hasNext,
-                hasPrev,
-                links: {
-                    self: buildPaginationUrl(paginationBaseUrl, page, size, urlParams),
-                    first: buildPaginationUrl(paginationBaseUrl, 1, size, urlParams),
-                    prev: hasPrev ? buildPaginationUrl(paginationBaseUrl, page - 1, size, urlParams) : null,
-                    next: hasNext ? buildPaginationUrl(paginationBaseUrl, page + 1, size, urlParams) : null,
-                    last: buildPaginationUrl(paginationBaseUrl, lastPage, size, urlParams),
-                    // Self-documenting: show both history options
-                    withHistory: includeHistory
-                        ? null
-                        : buildSpecialPaginationUrl(
-                              paginationBaseUrl,
-                              page,
-                              size,
-                              sort,
-                              "withHistory",
-                              metadataFields,
-                              includeMetadata,
-                              req.query.fields,
-                          ),
-                    withoutHistory: includeHistory
-                        ? buildSpecialPaginationUrl(
-                              paginationBaseUrl,
-                              page,
-                              size,
-                              sort,
-                              "withoutHistory",
-                              metadataFields,
-                              includeMetadata,
-                              req.query.fields,
-                          )
-                        : null,
-                    withMetadata: includeMetadata
-                        ? null
-                        : buildSpecialPaginationUrl(
-                              paginationBaseUrl,
-                              page,
-                              size,
-                              sort,
-                              "withMetadata",
-                              metadataFields,
-                          ),
-                    withoutMetadata: includeMetadata
-                        ? buildSpecialPaginationUrl(
-                              paginationBaseUrl,
-                              page,
-                              size,
-                              sort,
-                              "withoutMetadata",
-                              metadataFields,
-                          )
-                        : null,
-                },
-            },
+            pagination,
         });
     } catch (err) {
         const error = err as Error;
-        logger.error("Error fetching DPIDs", error.message);
+        logger.error({ url: req.url, error: errWithCause(error) }, "Error fetching DPIDs");
         return res.status(500).json({
             error: "Failed to fetch DPIDs",
             details: error.message,

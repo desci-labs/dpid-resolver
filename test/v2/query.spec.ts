@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createRequire } from "module";
 import { app } from "../../src/index.js";
 import type { getCodexHistory } from "../../src/api/v2/queries/history.js";
+import type { DpidListResponse } from "../../src/api/v2/queries/dpids.js";
 import type { TestResponse } from "../testUtils.js";
 
 // Use createRequire to import CommonJS supertest in ESM environment
@@ -258,6 +259,162 @@ describe("/api/v2/query", { timeout: 10_000 }, async () => {
                             details: "missing stream ID in path parameter",
                         }),
                     );
+                });
+        });
+    });
+
+    describe("/dpids", { timeout: 15_000 }, async () => {
+        // Page 80 with size 4 and sort=asc returns 2 legacy and 2 ceramic dpids
+        const testPage = 80;
+        const testSize = 4;
+        const baseQuery = `page=${testPage}&size=${testSize}&sort=asc`;
+
+        it("should return paginated list of dpids", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?${baseQuery}`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    expect(res.body).toHaveProperty("dpids");
+                    expect(res.body).toHaveProperty("pagination");
+                    expect(Array.isArray(res.body.dpids)).toBe(true);
+                    expect(res.body.dpids.length).toEqual(testSize);
+                });
+        });
+
+        it("should return correct response structure for each dpid", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?${baseQuery}`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    res.body.dpids.forEach((dpid) => {
+                        expect(dpid).toEqual(
+                            expect.objectContaining({
+                                dpid: expect.any(Number),
+                                owner: expect.any(String),
+                                latestCid: expect.any(String),
+                                versionCount: expect.any(Number),
+                                source: expect.stringMatching(/^(ceramic|legacy)$/),
+                                links: expect.objectContaining({
+                                    history: expect.any(String),
+                                    latest: expect.any(String),
+                                    raw: expect.any(String),
+                                }),
+                            }),
+                        );
+                    });
+                });
+        });
+
+        it("should return both ceramic and legacy dpids on page 80", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?${baseQuery}`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    const sources = res.body.dpids.map((d) => d.source);
+                    expect(sources).toContain("ceramic");
+                    expect(sources).toContain("legacy");
+                });
+        });
+
+        it("should return the correct dPID sequence", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?${baseQuery}`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    const dpids = res.body.dpids.map((d) => d.dpid);
+                    expect(dpids).toEqual([317, 318, 319, 320]);
+                });
+        });
+
+        it("should return correct pagination metadata", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?${baseQuery}`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    expect(res.body.pagination).toEqual(
+                        expect.objectContaining({
+                            page: testPage,
+                            size: testSize,
+                            total: expect.any(Number),
+                            hasNext: expect.any(Boolean),
+                            hasPrev: true,
+                            links: expect.objectContaining({
+                                self: expect.stringContaining(`page=${testPage}`),
+                                first: expect.stringContaining("page=1"),
+                                prev: expect.stringContaining(`page=${testPage - 1}`),
+                                next: expect.any(String),
+                                last: expect.any(String),
+                            }),
+                        }),
+                    );
+                });
+        });
+
+        it("should include version history when history=true", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?${baseQuery}&history=true`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    const dpidsWithVersions = res.body.dpids.filter((d) => d.versions && d.versions.length > 0);
+                    expect(dpidsWithVersions.length).toEqual(4);
+
+                    dpidsWithVersions.forEach((dpid) => {
+                        dpid.versions!.forEach((version) => {
+                            expect(version).toEqual(
+                                expect.objectContaining({
+                                    index: expect.any(Number),
+                                    cid: expect.any(String),
+                                    resolveUrl: expect.any(String),
+                                }),
+                            );
+                        });
+                    });
+                });
+        });
+
+        it("should include metadata when metadata=true", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?${baseQuery}&metadata=true`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    const dpidsWithMetadata = res.body.dpids.filter((d) => d.metadata !== undefined);
+                    expect(dpidsWithMetadata.length).toEqual(4);
+                });
+        });
+
+        it("should include withHistory and withMetadata links in pagination", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?${baseQuery}`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    expect(res.body.pagination.links).toEqual(
+                        expect.objectContaining({
+                            withHistory: expect.stringContaining("history=true"),
+                            withMetadata: expect.stringContaining("metadata=true"),
+                        }),
+                    );
+                });
+        });
+
+        it("should sort in descending order by default", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?page=${testPage}&size=${testSize}`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    const dpidNumbers = res.body.dpids.map((d) => d.dpid);
+                    const sortedDesc = [...dpidNumbers].sort((a, b) => b - a);
+                    expect(dpidNumbers).toEqual(sortedDesc);
+                });
+        });
+
+        it("should sort in ascending order when sort=asc", async () => {
+            await request(app)
+                .get(`/api/v2/query/dpids?page=${testPage}&size=${testSize}&sort=asc`)
+                .expect(200)
+                .expect((res: { body: DpidListResponse }) => {
+                    const dpidNumbers = res.body.dpids.map((d) => d.dpid);
+                    const sortedAsc = [...dpidNumbers].sort((a, b) => a - b);
+                    expect(dpidNumbers).toEqual(sortedAsc);
                 });
         });
     });
