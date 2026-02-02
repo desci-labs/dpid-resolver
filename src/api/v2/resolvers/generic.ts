@@ -191,7 +191,10 @@ export const resolveGenericHandler = async (
                 depth: "full",
             });
         } catch (e) {
-            logger.error({ error: serializeError(e as Error), cid: dataBucket.cid }, "Failed to fetch IPFS folder tree");
+            logger.error(
+                { error: serializeError(e as Error), cid: dataBucket.cid },
+                "Failed to fetch IPFS folder tree",
+            );
             return res.status(500).send({
                 error: "Failed to fetch IPFS folder tree",
                 details: serializeError(e as Error),
@@ -201,7 +204,10 @@ export const resolveGenericHandler = async (
 
         let ijMetadata: IJMetadata | undefined;
         try {
-            const tempMetadata = (await ipfsCat(`${dataBucket.cid}/insight-journal-metadata.json`)) as unknown as {
+            const tempMetadata = (await ipfsCat(
+                `${dataBucket.cid}/insight-journal-metadata.json`,
+                true,
+            )) as unknown as {
                 license: string;
                 publication_id: number;
                 revisions: Array<{

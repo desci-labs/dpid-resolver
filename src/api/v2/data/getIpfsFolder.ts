@@ -95,7 +95,20 @@ const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
     return null;
 };
 
-export const ipfsCat = async (arg: string): Promise<unknown> => {
+/** Get JSON data from IPFS. When used for small files, shouldCache can be used to serve it
+ * from redis
+ */
+export const ipfsCat = async (arg: string, shouldCache: boolean = false): Promise<unknown> => {
+    const cacheKey = `resolver-${DPID_ENV}-cat-${arg}`;
+    if (shouldCache) {
+        const cachedContent = await redisService?.getFromCache(cacheKey);
+        if (cachedContent) {
+            logger.info({ cacheKey }, "Serving ipfsCat from cache");
+            void redisService?.keyBump(cacheKey, CACHE_TTL_ANCHORED);
+            return cachedContent;
+        }
+    }
+
     const url = `${IPFS_GATEWAY.replace(/\/ipfs$/, "")}/api/v0/cat?arg=${encodeURIComponent(arg)}`;
     logger.info({ url }, "Fetching IPFS content via public HTTP gateway");
     const { data } = await axios({
@@ -109,7 +122,11 @@ export const ipfsCat = async (arg: string): Promise<unknown> => {
 
     // Attempt to parse as JSON, throw descriptive error if it fails
     try {
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        if (shouldCache) {
+            void redisService?.setToCache(cacheKey, parsed, CACHE_TTL_ANCHORED);
+        }
+        return parsed;
     } catch (e) {
         const preview = typeof data === "string" ? data.slice(0, 100) : String(data);
         throw new Error(`ipfsCat: expected JSON response but got: "${preview}..."`);
