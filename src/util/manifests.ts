@@ -127,7 +127,7 @@ export const getManifestMetadata = async (
         logger.info({ cid, fieldsRequested: fields, fieldsFound: Object.keys(metadata) }, "Fetched manifest metadata");
         return metadata;
     } catch (e) {
-        logger.warn({ cid }, "Failed to extract metadata from manifest");
+        logger.warn({ cid, error: errWithCause(e as Error) }, "Failed to extract metadata from manifest");
         return null;
     }
 };
