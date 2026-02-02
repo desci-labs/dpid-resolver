@@ -51,12 +51,6 @@ export const dpidAliasRegistry = tc.DpidAliasRegistry__factory.connect(
     getOptimismProvider(),
 );
 
-/**
- * @deprecated Use the shared `dpidAliasRegistry` instance directly instead.
- * This function exists for backward compatibility but returns the same singleton.
- */
-export const getDpidAliasRegistry = () => dpidAliasRegistry;
-
 export const getNodesUrl = () => {
     switch (DPID_ENV) {
         case "local":
