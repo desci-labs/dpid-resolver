@@ -30,6 +30,7 @@ export interface RedisService {
     keyBump: (key: string, ttl: number) => Promise<void>;
     getFromCache: <T>(key: string) => Promise<T | null>;
     setToCache: <T>(key: string, value: T, ttl: number) => Promise<void>;
+    del: (key: string) => Promise<void>;
 }
 
 export interface RedisConfig {
@@ -102,6 +103,16 @@ export function createRedisService(config: RedisConfig): RedisService {
         logger.info({ fn: "setToCache", key, op: "set" }, "added value to cache");
     }
 
+    async function del(key: string): Promise<void> {
+        if (!client?.isReady) {
+            logger.error({ fn: "del", key, op: "del" }, "client not connected");
+            return;
+        }
+
+        await client.del(key);
+        logger.info({ fn: "del", key, op: "del" }, "deleted key from cache");
+    }
+
     return {
         async start() {
             if (isRunning) {
@@ -142,6 +153,7 @@ export function createRedisService(config: RedisConfig): RedisService {
         keyBump,
         getFromCache,
         setToCache,
+        del,
     };
 }
 

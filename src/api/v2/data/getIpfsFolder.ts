@@ -34,6 +34,30 @@ const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] =
 const getKeyForIpfsTree = (cid: string, rootName: string, depthKey: string) =>
     `resolver-v6-${DPID_ENV}-ipfs-tree-${rootName}-${depthKey}-${cid}`;
 
+// Per-CID DAG node cache: avoids redundant IPFS HTTP calls on retries
+const getKeyForDagNode = (cid: string) => `resolver-v6-${DPID_ENV}-dag-node-${cid}`;
+const DAG_NODE_CACHE_TTL = 4 * 60 * 60; // 4 hours
+
+// Subtree cache: stores completed directory subtrees for progressive resolution
+const getKeyForSubtree = (cid: string) => `resolver-v6-${DPID_ENV}-ipfs-subtree-full-${cid}`;
+
+// Singleflight: coalesces concurrent requests for the same tree to prevent worker stacking
+const inflightTrees = new Map<string, Promise<IpfsEntry>>();
+
+/**
+ * Fix paths in a cached subtree when grafting it at a new position in the tree.
+ * CIDs are content-addressed so the tree structure is identical, but the absolute
+ * paths depend on where in the parent tree the subtree is mounted.
+ */
+const fixSubtreePaths = (entry: IpfsEntry, basePath: string) => {
+    entry.path = basePath;
+    if (entry.children) {
+        for (const child of entry.children) {
+            fixSubtreePaths(child, `${basePath}/${child.name}`);
+        }
+    }
+};
+
 export type IpfsEntry = {
     name: string;
     path: string;
@@ -120,6 +144,16 @@ export type EnhancedIpfsEntry = IpfsEntry & { gateway?: string; cid: string; nam
 
 /** Fetch a DAG node via IPFS HTTP API with retry logic and fallback gateway support */
 export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIpfsEntry> => {
+    // Check per-CID cache to avoid redundant IPFS fetches on retries
+    if (redisService) {
+        try {
+            const cached = await redisService.getFromCache<EnhancedIpfsEntry>(getKeyForDagNode(arg));
+            if (cached !== null) return cached;
+        } catch {
+            // Cache read failed, proceed with normal fetch
+        }
+    }
+
     const gateways = [IPFS_DAG_API_URL, ...IPFS_DAG_API_FALLBACK_URLS];
     let lastError: unknown;
 
@@ -146,7 +180,13 @@ export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIp
                         "Successfully fetched DAG node from fallback gateway",
                     );
                 }
-                return { ...data, gateway: chosenGateway } as EnhancedIpfsEntry;
+                const result = { ...data, gateway: chosenGateway } as EnhancedIpfsEntry;
+                if (redisService) {
+                    void redisService
+                        .setToCache(getKeyForDagNode(arg), result, DAG_NODE_CACHE_TTL)
+                        .catch(() => {});
+                }
+                return result;
             } catch (error) {
                 const axiosError = error as {
                     response?: { status?: number; data?: { Message?: string } };
@@ -221,7 +261,11 @@ export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIp
             },
             "Using public gateway fallback for missing CID",
         );
-        return { ...publicData, gateway: "public" } as EnhancedIpfsEntry;
+        const result = { ...publicData, gateway: "public" } as EnhancedIpfsEntry;
+        if (redisService) {
+            void redisService.setToCache(getKeyForDagNode(arg), result, DAG_NODE_CACHE_TTL).catch(() => {});
+        }
+        return result;
     }
 
     // Content not found anywhere
@@ -234,6 +278,11 @@ const isUnixFsDirectory = (dagNode: any): boolean => dagNode?.Data?.["/"]?.bytes
 /**
  * Recursively build a folder tree starting from a UnixFS root CID.
  * Limits concurrent DAG fetches to avoid overloading the IPFS gateway.
+ *
+ * Uses singleflight to prevent thundering herd (concurrent requests for the same
+ * tree share one resolution), DFS traversal order (subtrees complete before siblings),
+ * and progressive subtree caching (completed subtrees are cached individually so that
+ * retries after partial failures make forward progress).
  */
 export const getIpfsFolderTreeByCid = async (
     rootCid: string,
@@ -245,6 +294,8 @@ export const getIpfsFolderTreeByCid = async (
 
     const depthKey = maxDepth === "full" ? "full" : `d${maxDepth}`;
     const cacheKey = getKeyForIpfsTree(rootCid, rootName, depthKey);
+
+    // 1. Check full-tree cache
     if (redisService) {
         try {
             const cached = await redisService.getFromCache<IpfsEntry>(cacheKey);
@@ -259,6 +310,35 @@ export const getIpfsFolderTreeByCid = async (
         }
     }
 
+    // 2. Singleflight: if another request is already resolving this exact tree, join it
+    //    instead of spawning a new set of workers (prevents worker stacking on retries)
+    const inflight = inflightTrees.get(cacheKey);
+    if (inflight) {
+        logger.info({ cacheKey, rootCid }, "Joining in-flight tree resolution");
+        return inflight;
+    }
+
+    // 3. Start new resolution and register in singleflight map
+    const promise = resolveIpfsTree(rootCid, rootName, maxConcurrency, maxDepth, cacheKey);
+    inflightTrees.set(cacheKey, promise);
+    promise.finally(() => inflightTrees.delete(cacheKey));
+    return promise;
+};
+
+/**
+ * Internal: resolve an IPFS tree using DFS traversal with progressive subtree caching.
+ *
+ * DFS (depth-first) traversal means subtrees complete before sibling branches are explored.
+ * This enables caching completed subtrees individually, so that even if the full tree
+ * resolution times out, progress is preserved for the next attempt.
+ */
+async function resolveIpfsTree(
+    rootCid: string,
+    rootName: string,
+    maxConcurrency: number,
+    maxDepth: number | "full",
+    cacheKey: string,
+): Promise<IpfsEntry> {
     const rootDag: any = await fetchDagNode(rootCid);
     const rootIsDir = isUnixFsDirectory(rootDag);
     if (!rootIsDir) {
@@ -281,9 +361,45 @@ export const getIpfsFolderTreeByCid = async (
 
     type QueueItem = { parent: IpfsEntry; linkName: string; cid: string; path: string; size?: number; depth: number };
     const queue: QueueItem[] = [];
+    const useSubtreeCache = maxDepth === "full";
 
-    const enqueueChildren = (parent: IpfsEntry, dagNode: any, parentPath: string, parentDepth: number) => {
+    // --- Subtree completion tracking ---
+    // Each directory tracks how many of its children are still pending resolution.
+    // When a directory's pending count reaches 0, its subtree is fully resolved and
+    // can be cached. Completion propagates upward to the parent.
+    const pendingChildren = new Map<IpfsEntry, number>();
+    const parentOf = new Map<IpfsEntry, IpfsEntry>();
+    const subtreeHasError = new Set<IpfsEntry>();
+    const cachedSubtreeKeys: string[] = [];
+
+    const onChildResolved = (parent: IpfsEntry, childHadError: boolean) => {
+        if (childHadError) subtreeHasError.add(parent);
+        const remaining = (pendingChildren.get(parent) ?? 1) - 1;
+        pendingChildren.set(parent, remaining);
+
+        if (remaining === 0) {
+            const hasError = subtreeHasError.has(parent);
+
+            // Cache this completed subtree (skip root; it gets the full-tree cache)
+            if (useSubtreeCache && redisService && !hasError && parent !== root) {
+                const subtreeKey = getKeyForSubtree(parent.cid);
+                cachedSubtreeKeys.push(subtreeKey);
+                void redisService.setToCache(subtreeKey, parent, CACHE_TTL_ANCHORED).catch((error) => {
+                    logger.warn({ error, subtreeKey }, "Failed to cache completed subtree");
+                });
+            }
+
+            // Propagate completion to grandparent
+            const grandparent = parentOf.get(parent);
+            if (grandparent) {
+                onChildResolved(grandparent, hasError);
+            }
+        }
+    };
+
+    const enqueueChildren = (parent: IpfsEntry, dagNode: any, parentPath: string, parentDepth: number): number => {
         const links: Array<{ Name: string; Hash: unknown; Tsize?: number }> = dagNode?.Links ?? [];
+        let enqueued = 0;
 
         for (const link of links) {
             let childCid: string | undefined;
@@ -311,23 +427,47 @@ export const getIpfsFolderTreeByCid = async (
                 size: link.Tsize,
                 depth: childDepth,
             });
+            enqueued++;
         }
+
+        return enqueued;
     };
 
-    enqueueChildren(root, rootDag, root.path, 0);
+    const rootChildCount = enqueueChildren(root, rootDag, root.path, 0);
+    pendingChildren.set(root, rootChildCount);
 
-    let index = 0;
     const workers: Promise<void>[] = [];
     let hasErrors = false;
 
-    const take = (): QueueItem | undefined => (index < queue.length ? queue[index++] : undefined);
+    // DFS: pop from end of array (LIFO/stack) so workers explore depth-first.
+    // This completes subtrees before moving to sibling branches, enabling progressive caching.
+    const take = (): QueueItem | undefined => (queue.length > 0 ? queue.pop() : undefined);
 
     const worker = async () => {
         let item: QueueItem | undefined;
-        // Drain queue; new children may extend queue while iterating
+        // Drain stack; new children may extend it while iterating
         // eslint-disable-next-line no-cond-assign
         while ((item = take()) !== undefined) {
             try {
+                // Check subtree cache: if this CID's full subtree was resolved in a previous
+                // (possibly timed-out) request, graft it directly instead of re-traversing
+                if (useSubtreeCache && redisService) {
+                    try {
+                        const subtreeKey = getKeyForSubtree(item.cid);
+                        const cachedSubtree = await redisService.getFromCache<IpfsEntry>(subtreeKey);
+                        if (cachedSubtree) {
+                            cachedSubtree.name = item.linkName;
+                            fixSubtreePaths(cachedSubtree, item.path);
+                            item.parent.children!.push(cachedSubtree);
+                            cachedSubtreeKeys.push(subtreeKey);
+                            onChildResolved(item.parent, false);
+                            continue;
+                        }
+                    } catch {
+                        // Cache read failed, proceed with normal fetch
+                    }
+                }
+
                 const dagNode: any = await fetchDagNode(item.cid);
                 if (isUnixFsDirectory(dagNode)) {
                     const dirEntry: EnhancedIpfsEntry = {
@@ -339,8 +479,14 @@ export const getIpfsFolderTreeByCid = async (
                         gateway: (item.parent as EnhancedIpfsEntry).gateway,
                     };
                     item.parent.children!.push(dirEntry);
-                    if (maxDepth === "full" || item.depth < maxDepth) {
-                        enqueueChildren(dirEntry, dagNode, item.path, item.depth);
+
+                    const childCount = enqueueChildren(dirEntry, dagNode, item.path, item.depth);
+                    if (childCount > 0) {
+                        pendingChildren.set(dirEntry, childCount);
+                        parentOf.set(dirEntry, item.parent);
+                    } else {
+                        // Empty or depth-limited directory: immediately complete
+                        onChildResolved(item.parent, false);
                     }
                 } else {
                     const fileEntry: EnhancedIpfsEntry = {
@@ -352,9 +498,11 @@ export const getIpfsFolderTreeByCid = async (
                         gateway: dagNode.gateway,
                     };
                     item.parent.children!.push(fileEntry);
+                    onChildResolved(item.parent, false);
                 }
             } catch (error) {
                 hasErrors = true;
+                onChildResolved(item.parent, true);
                 const errorTyped = error as {
                     message?: string;
                     response?: { data?: { Message?: string }; status?: number };
@@ -365,8 +513,8 @@ export const getIpfsFolderTreeByCid = async (
                 logger.warn(
                     {
                         error: errorMessage,
-                        cid: item?.cid,
-                        path: item?.path,
+                        cid: item.cid,
+                        path: item.path,
                         isMissingContent,
                         status: errorTyped?.response?.status,
                     },
@@ -383,17 +531,25 @@ export const getIpfsFolderTreeByCid = async (
     }
     await Promise.all(workers);
 
-    // Only cache if we successfully fetched all children
+    // Cache full tree if no errors, and clean up now-redundant subtree cache entries
     if (redisService && !hasErrors) {
-        void redisService.setToCache(cacheKey, root, CACHE_TTL_ANCHORED).catch((error) => {
-            logger.warn({ error, key: cacheKey }, "Failed to set Redis cache for ipfs tree");
-        });
+        void redisService
+            .setToCache(cacheKey, root, CACHE_TTL_ANCHORED)
+            .then(() => {
+                // Full tree cached — subtree entries are now redundant, clean them up
+                for (const key of cachedSubtreeKeys) {
+                    void redisService!.del(key).catch(() => {});
+                }
+            })
+            .catch((error) => {
+                logger.warn({ error, key: cacheKey }, "Failed to set Redis cache for ipfs tree");
+            });
     } else if (hasErrors) {
-        logger.info({ cacheKey, rootCid }, "Skipping cache due to errors fetching some children");
+        logger.info({ cacheKey, rootCid }, "Skipping full tree cache due to errors (subtrees may be cached individually)");
     }
 
     return root;
-};
+}
 
 /**
  * Resolve a DPID to its manifest, extract the `root` component's CID, and return the full IPFS tree.
