@@ -222,7 +222,6 @@ export const resolveGenericHandler = async (
                 tags?: string[];
                 source_code_git_repo?: string;
             };
-            logger.info({ ipfsFolder }, "Temp metadata");
 
             const cover = (manifest.coverImage as string | undefined) ?? undefined;
             ijMetadata = {
