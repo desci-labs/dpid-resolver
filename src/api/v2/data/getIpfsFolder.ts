@@ -25,6 +25,16 @@ const PUBLIC_IPFS_GATEWAYS = process.env.PUBLIC_IPFS_GATEWAYS
       ];
 const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] => Directory
 
+/**
+ * Check if a CID uses the raw codec (multicodec 0x55), meaning it's a leaf
+ * file whose content IS the raw bytes — never a UnixFS directory.
+ *
+ * CIDv1 base32 encodes: <multibase><version><codec><multihash...>
+ * "bafkrei" = base32lower 'b' + CIDv1 version 0x01 + raw codec 0x55 + sha2-256 0x1220.
+ * Any CID starting with this prefix is guaranteed to be a raw file leaf.
+ */
+const isRawCodecCid = (cid: string): boolean => cid.startsWith("bafkrei");
+
 // Cache key version history:
 // v2: Initial versioned cache key
 // v3: Invalidated to force re-fetch with public gateway fallback for missing files
@@ -68,17 +78,34 @@ export type IpfsEntry = {
 };
 
 /**
- * Check content existence on public HTTP gateway without downloading the body (HEAD).
- * Returns a minimal DAG-like object to indicate a file node when found.
- * This is a fallback when DAG API is unavailable.
+ * Probe gateways with HEAD requests to find one that can serve a CID, without
+ * downloading the body. Checks DAG API gateways first (via their /ipfs path),
+ * then public HTTP gateways. Returns the gateway base URL on success, using
+ * the DAG API URL for DAG API gateways so downstream consumers get the format
+ * they expect.
  */
-const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
-    for (const gateway of PUBLIC_IPFS_GATEWAYS) {
+const probeGatewayForCid = async (cid: string): Promise<string | undefined> => {
+    // Build probe list: DAG API gateways first (probed via /ipfs, returned as /api/v0),
+    // then public HTTP gateways (probed and returned as-is)
+    const probes: Array<{ probeUrl: string; returnUrl: string }> = [];
+    for (const dagApiUrl of [IPFS_DAG_API_URL, ...IPFS_DAG_API_FALLBACK_URLS]) {
+        probes.push({
+            probeUrl: `${dagApiUrl.replace(/\/api\/v0$/, "/ipfs")}/${cid}`,
+            returnUrl: dagApiUrl,
+        });
+    }
+    for (const publicGw of PUBLIC_IPFS_GATEWAYS) {
+        probes.push({
+            probeUrl: `${publicGw}/${cid}`,
+            returnUrl: publicGw,
+        });
+    }
+
+    for (const { probeUrl, returnUrl } of probes) {
         try {
-            const url = `${gateway}/${cid}`;
             const response = await axios({
                 method: "HEAD",
-                url,
+                url: probeUrl,
                 timeout: 15000,
                 validateStatus: (status) => status === 200 || status === 404,
                 httpAgent,
@@ -86,37 +113,19 @@ const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
             });
 
             if (response.status === 200) {
-                logger.info(
-                    {
-                        cid,
-                        gateway,
-                        contentType: response.headers["content-type"],
-                        contentLength: response.headers["content-length"],
-                    },
-                    "Content exists on public HTTP gateway (HEAD)",
-                );
-
-                // Return a minimal structure that will be treated as a file (not a directory)
-                // by isUnixFsDirectory (bytes !== MAGIC_UNIXFS_DIR_FLAG)
-                return {
-                    Data: {
-                        "/": {
-                            bytes: "",
-                        },
-                    },
-                    Links: [],
-                };
+                logger.info({ cid, probeUrl, gateway: returnUrl }, "Content found via HEAD probe");
+                return returnUrl;
             }
         } catch (error) {
             const axiosError = error as { response?: { status?: number }; message?: string };
             if (axiosError.response?.status === 404) {
-                logger.debug({ cid, gateway }, "CID not found on this public gateway");
+                logger.debug({ cid, probeUrl }, "CID not found on gateway");
                 continue;
             }
-            logger.debug({ cid, gateway, error: axiosError.message }, "Failed to query public gateway (HEAD)");
+            logger.debug({ cid, probeUrl, error: axiosError.message }, "HEAD probe failed");
         }
     }
-    return null;
+    return undefined;
 };
 
 /** Get JSON data from IPFS. When used for small files, shouldCache can be used to serve it
@@ -262,18 +271,25 @@ export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIp
     const lastErrorTyped = lastError as { response?: { data?: { Message?: string } }; message?: string } | undefined;
     const errorMsg = lastErrorTyped?.response?.data?.Message || lastErrorTyped?.message || "Unknown error";
 
-    logger.debug({ cid: arg }, "All DAG API gateways failed, trying public HTTP gateways");
-    const publicData = await fetchViaPublicHttpGateway(arg);
+    logger.debug({ cid: arg }, "All DAG API gateways failed, probing for content via HEAD");
+    const probeGateway = await probeGatewayForCid(arg);
 
-    if (publicData) {
+    if (probeGateway) {
         logger.info(
             {
                 cid: arg,
-                note: "Content fetched from public IPFS gateway - consider pinning to ipfs.desci.com",
+                gateway: probeGateway,
+                note: "Content found via HEAD probe - consider pinning to ipfs.desci.com",
             },
-            "Using public gateway fallback for missing CID",
+            "Using probed gateway fallback for missing CID",
         );
-        const result = { ...publicData, gateway: "public" } as EnhancedIpfsEntry;
+        const result: EnhancedIpfsEntry = {
+            name: "",
+            path: "",
+            cid: arg,
+            type: "file",
+            gateway: probeGateway,
+        };
         void redisService?.setToCache(cacheKey, result, DAG_NODE_CACHE_TTL);
         return result;
     }
@@ -357,7 +373,15 @@ async function resolveIpfsTree(
 
     const root: IpfsEntry = { name: rootName, path: rootName, cid: rootCid, type: "directory", children: [] };
 
-    type QueueItem = { parent: IpfsEntry; linkName: string; cid: string; path: string; size?: number; depth: number };
+    type QueueItem = {
+        parent: IpfsEntry;
+        linkName: string;
+        cid: string;
+        path: string;
+        size?: number;
+        depth: number;
+        gateway?: string;
+    };
     const queue: QueueItem[] = [];
     const useSubtreeCache = maxDepth === "full";
 
@@ -395,6 +419,9 @@ async function resolveIpfsTree(
 
     const enqueueChildren = (parent: IpfsEntry, dagNode: any, parentPath: string, parentDepth: number): number => {
         const links: Array<{ Name: string; Hash: unknown; Tsize?: number }> = dagNode?.Links ?? [];
+        // The gateway that served this directory's DAG node — its children are
+        // very likely available on the same gateway since IPFS pins entire DAGs.
+        const dagGateway: string | undefined = dagNode?.gateway;
         let enqueued = 0;
 
         for (const link of links) {
@@ -422,6 +449,7 @@ async function resolveIpfsTree(
                 path: childPath,
                 size: link.Tsize,
                 depth: childDepth,
+                gateway: dagGateway,
             });
             enqueued++;
         }
@@ -460,6 +488,23 @@ async function resolveIpfsTree(
                     }
                 }
 
+                // Raw-codec CIDs are always leaf files; probe for a serving
+                // gateway via HEAD instead of downloading the full content.
+                if (isRawCodecCid(item.cid)) {
+                    const gateway = await probeGatewayForCid(item.cid);
+                    const fileEntry: EnhancedIpfsEntry = {
+                        name: item.linkName,
+                        path: item.path,
+                        cid: item.cid,
+                        size: item.size,
+                        type: "file",
+                        gateway,
+                    };
+                    item.parent.children!.push(fileEntry);
+                    onChildResolved(item.parent, false);
+                    continue;
+                }
+
                 const dagNode: any = await fetchDagNode(item.cid);
                 if (isUnixFsDirectory(dagNode)) {
                     const dirEntry: EnhancedIpfsEntry = {
@@ -468,7 +513,7 @@ async function resolveIpfsTree(
                         cid: item.cid,
                         type: "directory",
                         children: [],
-                        gateway: (item.parent as EnhancedIpfsEntry).gateway,
+                        gateway: dagNode.gateway,
                     };
                     item.parent.children!.push(dirEntry);
 
