@@ -1,11 +1,11 @@
 import type { ResearchObjectV1, ResearchObjectV1Author } from "@desci-labs/desci-models";
 import type { HistoryQueryResult } from "../api/v2/queries/history.js";
-import type { EnhancedIpfsEntry } from "../api/v2/data/getIpfsFolder.js";
+import type { IpfsEntryWithGateway } from "../api/v2/data/getIpfsFolder.js";
 
 export type IJMetadata = {
     affiliations?: Record<string, string>;
     corresponding_author?: string;
-    flatFiles?: Array<EnhancedIpfsEntry> | undefined;
+    flatFiles?: Array<IpfsEntryWithGateway> | undefined;
     license_text?: string;
     id?: number;
     journal_name?: string;
@@ -197,7 +197,7 @@ export async function buildMystPageFromManifest(params: {
             thumbnail_optimized: thumbnailOptimized,
         },
         mdast: { type: "root" },
-        downloads: ij.flatFiles?.map((f: EnhancedIpfsEntry) => {
+        downloads: ij.flatFiles?.map((f: IpfsEntryWithGateway) => {
             // Use the gateway that successfully fetched the file
             let gatewayUrl: string;
             if (!f.gateway || f.gateway === "public") {

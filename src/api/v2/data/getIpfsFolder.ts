@@ -6,6 +6,7 @@ import { resolveDpid } from "../resolvers/dpid.js";
 import { redisService } from "../../../redis.js";
 import { getManifest } from "../../../util/manifests.js";
 import { httpAgent, httpsAgent } from "../../../util/httpAgent.js";
+import { hackyTsizeIsDir, isRawCodecCid, magicIsUnixFsDir, type PbLink } from "../../../util/ipfs.js";
 
 const logger = parentLogger.child({ module: "/api/v2/data/getIpfsFolder" });
 
@@ -23,17 +24,6 @@ const PUBLIC_IPFS_GATEWAYS = process.env.PUBLIC_IPFS_GATEWAYS
           "https://dweb.link/ipfs",
           "https://cloudflare-ipfs.com/ipfs",
       ];
-const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] => Directory
-
-/**
- * Check if a CID uses the raw codec (multicodec 0x55), meaning it's a leaf
- * file whose content IS the raw bytes — never a UnixFS directory.
- *
- * CIDv1 base32 encodes: <multibase><version><codec><multihash...>
- * "bafkrei" = base32lower 'b' + CIDv1 version 0x01 + raw codec 0x55 + sha2-256 0x1220.
- * Any CID starting with this prefix is guaranteed to be a raw file leaf.
- */
-const isRawCodecCid = (cid: string): boolean => cid.startsWith("bafkrei");
 
 // Cache key version history:
 // v2: Initial versioned cache key
@@ -149,13 +139,16 @@ export const ipfsCat = async (arg: string, shouldCache: boolean = false): Promis
     }
 };
 
-export type EnhancedIpfsEntry = IpfsEntry & { gateway?: string; cid: string; name: string };
+export type IpfsEntryWithGateway = IpfsEntry & {
+    gateway?: string;
+    children?: IpfsEntryWithGateway[] | undefined;
+};
 
 /** Fetch a DAG node via IPFS HTTP API with retry logic and fallback gateway support */
-export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIpfsEntry> => {
+export const fetchDagNode = async (arg: string, retries = 2): Promise<IpfsEntryWithGateway> => {
     // Check per-CID cache to avoid redundant IPFS fetches on retries
     const cacheKey = getKeyForDagNode(arg);
-    const cached = await redisService?.getFromCache<EnhancedIpfsEntry>(cacheKey);
+    const cached = await redisService?.getFromCache<IpfsEntryWithGateway>(cacheKey);
     if (cached) {
         logger.info({ cacheKey }, "Serving dag node from cache");
         void redisService?.keyBump(cacheKey, DAG_NODE_CACHE_TTL);
@@ -188,7 +181,7 @@ export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIp
                         "Successfully fetched DAG node from fallback gateway",
                     );
                 }
-                const result = { ...data, gateway: chosenGateway } as EnhancedIpfsEntry;
+                const result = { ...data, gateway: chosenGateway } as IpfsEntryWithGateway;
                 void redisService?.setToCache(cacheKey, result, DAG_NODE_CACHE_TTL);
                 return result;
             } catch (error) {
@@ -266,7 +259,7 @@ export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIp
             },
             "Using probed gateway fallback for missing CID",
         );
-        const result: EnhancedIpfsEntry = {
+        const result: IpfsEntryWithGateway = {
             name: "",
             path: "",
             cid: arg,
@@ -280,9 +273,6 @@ export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIp
     // Content not found anywhere
     throw new Error(`Failed to fetch DAG node ${arg} from all available gateways: ${errorMsg}`);
 };
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const isUnixFsDirectory = (dagNode: any): boolean => dagNode?.Data?.["/"]?.bytes === MAGIC_UNIXFS_DIR_FLAG;
 
 /**
  * Recursively build a folder tree starting from a UnixFS root CID.
@@ -318,7 +308,7 @@ export const getIpfsFolderTreeByCid = async (
     }
 
     // 3. Start new resolution and register in singleflight map
-    const promise = resolveIpfsTree(rootCid, rootName, maxConcurrency, maxDepth, cacheKey);
+    const promise = resolveIpfsTree(rootCid, rootName, maxConcurrency, maxDepth, cacheKey, true);
     inflightTrees.set(cacheKey, promise);
     promise.finally(() => inflightTrees.delete(cacheKey)).catch(() => {});
     return promise;
@@ -333,11 +323,13 @@ async function resolveIpfsTree(
     maxConcurrency: number,
     maxDepth: number | "full",
     cacheKey: string,
+    /** hack for detecting dirs by looking for 0 Tsize, which is incorrect in the dag-pb */
+    abuseTsize: boolean = false,
 ): Promise<IpfsEntry> {
     const rootDag: any = await fetchDagNode(rootCid);
-    const rootIsDir = isUnixFsDirectory(rootDag);
+    const rootIsDir = magicIsUnixFsDir(rootDag);
     if (!rootIsDir) {
-        const fileEntry: EnhancedIpfsEntry = {
+        const fileEntry: IpfsEntryWithGateway = {
             name: rootName,
             path: rootName,
             cid: rootCid,
@@ -361,20 +353,12 @@ async function resolveIpfsTree(
     };
     const queue: QueueItem[] = [];
 
-    const enqueueChildren = (parent: IpfsEntry, dagNode: any, parentPath: string, parentDepth: number): number => {
-        const links: Array<{ Name: string; Hash: unknown; Tsize?: number }> = dagNode?.Links ?? [];
-        // The gateway that served this directory's DAG node — its children are
-        // very likely available on the same gateway since IPFS pins entire DAGs.
+    const enqueueChildren = (parent: IpfsEntryWithGateway, dagNode: any, parentPath: string, parentDepth: number) => {
+        const links: Array<PbLink> = dagNode?.Links ?? [];
         const dagGateway: string | undefined = dagNode?.gateway;
-        let enqueued = 0;
 
         for (const link of links) {
-            let childCid: string | undefined;
-            if (typeof link.Hash === "string") {
-                childCid = link.Hash;
-            } else if (link.Hash && typeof (link.Hash as any)["/"] === "string") {
-                childCid = (link.Hash as any)["/"] as string;
-            }
+            const childCid = link.Hash["/"];
 
             if (!childCid) {
                 logger.warn({ link }, "Skipping link without valid CID string");
@@ -386,19 +370,31 @@ async function resolveIpfsTree(
             if (maxDepth !== "full" && childDepth > maxDepth) {
                 continue;
             }
-            queue.push({
-                parent,
-                linkName: link.Name,
-                cid: childCid,
-                path: childPath,
-                size: link.Tsize,
-                depth: childDepth,
-                gateway: dagGateway,
-            });
-            enqueued++;
-        }
 
-        return enqueued;
+            // Link Tsize seems to often be 0 on dirs but never on files, this skips resolving files at all
+            if (abuseTsize && parentDepth !== 0 && !hackyTsizeIsDir(link)) {
+                parent.children!.push({
+                    name: link.Name,
+                    path: childPath,
+                    cid: link.Hash["/"],
+                    size: link.Tsize,
+                    type: "file",
+                    // WARN: this is only necessarily true for IJ pubs (only ext cids at non-root depths).
+                    // It is not generic, so if you're debugging non-IJ nodes returning wrong URLs - this is it
+                    gateway: "https://pub.desci.com/api/v0",
+                });
+            } else {
+                queue.push({
+                    parent,
+                    linkName: link.Name,
+                    cid: childCid,
+                    path: childPath,
+                    size: link.Tsize,
+                    depth: childDepth,
+                    gateway: dagGateway,
+                });
+            }
+        }
     };
 
     enqueueChildren(root, rootDag, root.path, 0);
@@ -416,23 +412,27 @@ async function resolveIpfsTree(
             try {
                 // Raw-codec CIDs are always leaf files; probe for a serving
                 // gateway via HEAD instead of downloading the full content.
-                if (isRawCodecCid(item.cid)) {
-                    const gateway = await probeGatewayForCid(item.cid);
-                    const fileEntry: EnhancedIpfsEntry = {
-                        name: item.linkName,
-                        path: item.path,
-                        cid: item.cid,
-                        size: item.size,
-                        type: "file",
-                        gateway,
-                    };
-                    item.parent.children!.push(fileEntry);
-                    continue;
-                }
+                //
+                // WARN: files over the chunk size are also split into a DAG, so this doesn't necessarily mean it's an entire file.
+                //
+                // INFO: this is uncessesary when enqueueChildren uses hackyTsizeIsDir to identify leaves, as leaves never hit the queue at all
+                // if (isRawCodecCid(item.cid)) {
+                //     const gateway = await probeGatewayForCid(item.cid);
+                //     const fileEntry: EnhancedIpfsEntry = {
+                //         name: item.linkName,
+                //         path: item.path,
+                //         cid: item.cid,
+                //         size: item.size,
+                //         type: "file",
+                //         gateway,
+                //     };
+                //     item.parent.children!.push(fileEntry);
+                //     continue;
+                // }
 
                 const dagNode: any = await fetchDagNode(item.cid);
-                if (isUnixFsDirectory(dagNode)) {
-                    const dirEntry: EnhancedIpfsEntry = {
+                if (magicIsUnixFsDir(dagNode)) {
+                    const dirEntry: IpfsEntryWithGateway = {
                         name: item.linkName,
                         path: item.path,
                         cid: item.cid,
@@ -443,7 +443,7 @@ async function resolveIpfsTree(
                     item.parent.children!.push(dirEntry);
                     enqueueChildren(dirEntry, dagNode, item.path, item.depth);
                 } else {
-                    const fileEntry: EnhancedIpfsEntry = {
+                    const fileEntry: IpfsEntryWithGateway = {
                         name: item.linkName,
                         path: item.path,
                         cid: item.cid,
