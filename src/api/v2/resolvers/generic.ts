@@ -9,9 +9,10 @@ import { buildMystPageFromManifest, type IJMetadata } from "../../../util/myst.j
 import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
 import { isDpid, isVersionString } from "../../../util/validation.js";
-import { getIpfsFolderTreeByCid, ipfsCat, type EnhancedIpfsEntry } from "../data/getIpfsFolder.js";
+import { getIpfsFolderTreeByCid, ipfsCat, type IpfsEntryWithGateway } from "../data/getIpfsFolder.js";
 import { getManifest } from "../../../util/manifests.js";
 import { httpAgent, httpsAgent } from "../../../util/httpAgent.js";
+import { magicIsUnixFsDir } from "../../../util/ipfs.js";
 
 const MODULE_PATH = "/api/v2/resolvers/generic" as const;
 
@@ -49,8 +50,8 @@ export type SuccessResponse =
 
 export type ResolveGenericResponse = SuccessResponse | ErrorResponse;
 
-const flattenIpfsFolder = (ipfsFolder: EnhancedIpfsEntry): Array<EnhancedIpfsEntry> => {
-    return ipfsFolder.children?.flatMap((child: EnhancedIpfsEntry) => [child, ...flattenIpfsFolder(child)]) ?? [];
+const flattenIpfsFolder = (ipfsFolder: IpfsEntryWithGateway): Array<IpfsEntryWithGateway> => {
+    return ipfsFolder.children?.flatMap((child: IpfsEntryWithGateway) => [child, ...flattenIpfsFolder(child)]) ?? [];
 };
 
 /**
@@ -191,7 +192,10 @@ export const resolveGenericHandler = async (
                 depth: "full",
             });
         } catch (e) {
-            logger.error({ error: serializeError(e as Error), cid: dataBucket.cid }, "Failed to fetch IPFS folder tree");
+            logger.error(
+                { error: serializeError(e as Error), cid: dataBucket.cid },
+                "Failed to fetch IPFS folder tree",
+            );
             return res.status(500).send({
                 error: "Failed to fetch IPFS folder tree",
                 details: serializeError(e as Error),
@@ -201,7 +205,10 @@ export const resolveGenericHandler = async (
 
         let ijMetadata: IJMetadata | undefined;
         try {
-            const tempMetadata = (await ipfsCat(`${dataBucket.cid}/insight-journal-metadata.json`)) as unknown as {
+            const tempMetadata = (await ipfsCat(
+                `${dataBucket.cid}/insight-journal-metadata.json`,
+                true,
+            )) as unknown as {
                 license: string;
                 publication_id: number;
                 revisions: Array<{
@@ -216,7 +223,6 @@ export const resolveGenericHandler = async (
                 tags?: string[];
                 source_code_git_repo?: string;
             };
-            logger.info({ ipfsFolder }, "Temp metadata");
 
             const cover = (manifest.coverImage as string | undefined) ?? undefined;
             ijMetadata = {
@@ -355,7 +361,7 @@ export const resolveGenericHandler = async (
             logger.info({ ipfsData: data }, "IPFS DATA");
 
             // Check for magical UnixFS clues
-            if (magicIsUnixDir(data)) {
+            if (magicIsUnixFsDir(data)) {
                 // It's a dir, respond with the raw IPLD node as JSON
                 return res.status(200).send(data);
             } else {
@@ -398,21 +404,6 @@ const getVersionIndex = (versionString: string): number => {
     logger.info({ versionString, index }, "parsed version string");
     return index;
 };
-
-/**
- * Fun with IPLD/UnixFS part 4512:
- * - UnixFS data follows this protobuf schema: https://github.com/ipfs/specs/blob/main/UNIXFS.md#data-format
- * - Length-delimited protobuf encoding writes each fields as [size,data]
- * - The `Type` field is an enum, which is 8 bits long by default
- * - `Directory` has the enum value `1`
- * - [0x8,0x1] in base64 => CAE
- *
- * Hence, "CAE" obviously says "I'm a directory!"
- */
-const MAGIC_UNIXFS_DIR_FLAG = "CAE";
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const magicIsUnixDir = (mysteriousData: any) => mysteriousData.Data?.["/"]?.bytes === MAGIC_UNIXFS_DIR_FLAG;
 
 const rBucketRefHead = /^(root|data)\/?/;
 
