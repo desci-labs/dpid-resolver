@@ -46,7 +46,9 @@ export type DagPbNode = {
      * - else => the node is a sharded file (or other exotic DagPB, but probably not)
      */
     Data: {
-        "/": typeof MAGIC_UNIXFS_DIR_FLAG | string;
+        "/": {
+            bytes: typeof MAGIC_UNIXFS_DIR_FLAG | string;
+        };
     };
     Links: PbLink[];
 };
