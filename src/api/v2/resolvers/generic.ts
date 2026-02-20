@@ -4,7 +4,7 @@ import { RoCrateTransformer, type ResearchObjectV1 } from "@desci-labs/desci-mod
 
 import parentLogger, { serializeError } from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
-import { IPFS_GATEWAY, getNodesUrl, getNodesApiUrl } from "../../../util/config.js";
+import { IPFS_GATEWAY, getNodesUrl, getNodesApiUrl, CACHE_TTL_ANCHORED } from "../../../util/config.js";
 import { buildMystPageFromManifest, type IJMetadata } from "../../../util/myst.js";
 import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
@@ -13,6 +13,7 @@ import { getIpfsFolderTreeByCid, ipfsCat, type IpfsEntryWithGateway } from "../d
 import { getManifest } from "../../../util/manifests.js";
 import { httpAgent, httpsAgent } from "../../../util/httpAgent.js";
 import { magicIsUnixFsDir } from "../../../util/ipfs.js";
+import { redisService } from "../../../redis.js";
 
 const MODULE_PATH = "/api/v2/resolvers/generic" as const;
 
@@ -76,6 +77,98 @@ const flattenIpfsFolder = (ipfsFolder: IpfsEntryWithGateway): Array<IpfsEntryWit
     return ipfsFolder.children?.flatMap((child: IpfsEntryWithGateway) => [child, ...flattenIpfsFolder(child)]) ?? [];
 };
 
+const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+const fetchFileSizes = async (manifest: ResearchObjectV1, dpid: number): Promise<Record<string, number>> => {
+    const rootComponent = manifest.components.find((c) => c.name === "root");
+    if (!rootComponent?.payload?.cid) return {};
+
+    const cacheKey = `file-sizes:${rootComponent.payload.cid}`;
+    if (redisService) {
+        try {
+            const cached = await redisService.getFromCache<Record<string, number>>(cacheKey);
+            if (cached) return cached;
+        } catch (e) {
+            logger.warn({ dpid, error: e }, "Failed to read file sizes from cache");
+        }
+    }
+
+    const ipfsTree = await getIpfsFolderTreeByCid(rootComponent.payload.cid, {
+        rootName: "root",
+        concurrency: 4,
+        depth: "full",
+    });
+    const fileSizes: Record<string, number> = {};
+    const collectSizes = (entry: typeof ipfsTree) => {
+        if (entry.size) {
+            fileSizes[entry.cid] = entry.size;
+            fileSizes[entry.name] = entry.size;
+        }
+        entry.children?.forEach(collectSizes);
+    };
+    collectSizes(ipfsTree);
+    logger.info({ dpid, fileCount: Object.keys(fileSizes).length }, "Collected file sizes from IPFS");
+
+    if (redisService) {
+        void redisService.setToCache(cacheKey, fileSizes, CACHE_TTL_ANCHORED).catch((e) => {
+            logger.warn({ dpid, error: e }, "Failed to cache file sizes");
+        });
+    }
+    return fileSizes;
+};
+
+const prepareRoCrateMetadata = async (
+    dpid: number,
+    versionIx: number | undefined,
+    baseUrl: string,
+): Promise<{ roCrate: object; manifest: ResearchObjectV1; resolveResult: HistoryQueryResult }> => {
+    const resolveResult = await resolveDpid(dpid, versionIx);
+    const manifest = await getManifest(resolveResult.manifest);
+    if (!manifest) throw new Error("Could not get manifest");
+
+    let datePublished: number | undefined;
+    if (resolveResult.versions && resolveResult.versions.length > 0) {
+        const targetVersionIdx = versionIx ?? 0;
+        const targetVersion = resolveResult.versions[targetVersionIdx] ?? resolveResult.versions[0];
+        datePublished = targetVersion?.time;
+    }
+
+    let fileSizes: Record<string, number> = {};
+    try {
+        fileSizes = await fetchFileSizes(manifest, dpid);
+    } catch (e) {
+        logger.warn({ dpid, error: e }, "Failed to fetch file sizes from IPFS, continuing without them");
+    }
+
+    let aiKeywords: string[] = [];
+    if (!manifest.keywords || manifest.keywords.length === 0) {
+        aiKeywords = await fetchAiKeywords(dpid);
+        if (aiKeywords.length > 0) {
+            logger.info({ dpid, keywordCount: aiKeywords.length }, "Using AI-generated keywords");
+        }
+    }
+
+    const transformer = new RoCrateTransformer();
+    // Newer desci-models accepts a second metadata arg for FAIR fields;
+    // older versions ignore the extra argument at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roCrate = (transformer as any).exportObject(manifest, {
+        dpid,
+        datePublished,
+        publisher: "DeSci Labs",
+        dpidBaseUrl: baseUrl,
+        fileSizes,
+        aiKeywords,
+    });
+
+    return { roCrate, manifest, resolveResult };
+};
+
 /**
  * Resolve a dPID path. Will redirect to Nodes as viewer,
  * unless the `&raw` query parameter is set in the URL.
@@ -126,13 +219,22 @@ export const resolveGenericHandler = async (
         acceptHeader.includes("text/n3") ||
         acceptHeader.includes("text/rdf+n3");
 
+    // Return 406 for RDF formats we don't actually support (Turtle, N3, RDF+XML)
+    // unless the client also accepts JSON-LD, in which case we can serve that.
+    if (wantsRdfViaHeader && !wantsJsonLdViaHeader) {
+        return res.status(406).send({
+            error: "Requested RDF format not supported",
+            details: "Supported formats: application/ld+json, application/json, text/html",
+            ...baseError,
+        });
+    }
+
     const isRaw =
         query.raw !== undefined ||
         query.format === "raw" ||
-        (query.format === undefined && isApiRequest && !wantsJsonLdViaHeader && !wantsRdfViaHeader) ||
+        (query.format === undefined && isApiRequest && !wantsJsonLdViaHeader) ||
         query.format === "json";
-    // Support both query parameter AND Accept header content negotiation for JSON-LD
-    const isJsonld = query.jsonld !== undefined || query.format === "jsonld" || wantsJsonLdViaHeader || wantsRdfViaHeader;
+    const isJsonld = query.jsonld !== undefined || query.format === "jsonld" || wantsJsonLdViaHeader;
     const isMyst = query.format === "myst";
 
     /** dPID version identifier, possibly adjusted to 0-based indexing */
@@ -163,36 +265,52 @@ export const resolveGenericHandler = async (
     // Add Signposting Link headers for FAIR compliance (F4.1)
     // https://signposting.org/FAIR/
     const addSignpostingHeaders = (response: Response, manifest?: ResearchObjectV1) => {
+        const existingVary = response.getHeader("Vary");
+        const varySet = new Set(
+            (typeof existingVary === "string"
+                ? existingVary
+                : Array.isArray(existingVary)
+                  ? existingVary.join(", ")
+                  : ""
+            )
+                .split(",")
+                .map((v) => v.trim())
+                .filter(Boolean),
+        );
+        varySet.add("Accept");
+        varySet.add("User-Agent");
+        response.setHeader("Vary", [...varySet].join(", "));
+
         const linkHeaders: string[] = [];
-        
-        // Link to metadata in JSON-LD format (describedby)
+
         linkHeaders.push(`<${jsonldUrl}>; rel="describedby"; type="application/ld+json"`);
-        
-        // Link to the landing page (cite-as for persistent identifier)
         linkHeaders.push(`<${dpidUrl}>; rel="cite-as"`);
-        
-        // Link to RO-Crate profile
         linkHeaders.push(`<https://w3id.org/ro/crate/1.1>; rel="type"`);
-        
-        // Link to license if available
+
         if (manifest?.defaultLicense) {
             const licenseUrl = LICENSES_TO_URL[manifest.defaultLicense] || manifest.defaultLicense;
-            if (licenseUrl.startsWith('http')) {
+            if (licenseUrl.startsWith("http")) {
                 linkHeaders.push(`<${licenseUrl}>; rel="license"`);
             }
         }
-        
-        // Link to authors/creators if available
-        manifest?.authors?.forEach(author => {
+
+        manifest?.authors?.forEach((author) => {
             if (author.orcid) {
-                const orcidUrl = author.orcid.startsWith('https://') 
-                    ? author.orcid 
+                const orcidUrl = author.orcid.startsWith("https://")
+                    ? author.orcid
                     : `https://orcid.org/${author.orcid}`;
                 linkHeaders.push(`<${orcidUrl}>; rel="author"`);
             }
         });
-        
-        response.setHeader("Link", linkHeaders.join(", "));
+
+        const existingLink = response.getHeader("Link");
+        const existingLinks: string[] =
+            typeof existingLink === "string"
+                ? [existingLink]
+                : Array.isArray(existingLink)
+                  ? existingLink
+                  : [];
+        response.setHeader("Link", [...existingLinks, ...linkHeaders].join(", "));
     };
 
     // License URL mapping (duplicated from RoCrateTransformer for header generation)
@@ -208,10 +326,10 @@ export const resolveGenericHandler = async (
 
     if (isJsonld) {
         logger.info({ path, query }, "got request for jsonld");
-        let cid: string;
         try {
-            const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
-            cid = resolveResult.manifest;
+            const { roCrate, manifest } = await prepareRoCrateMetadata(parseInt(dpid), versionIx, baseUrl);
+            addSignpostingHeaders(res, manifest);
+            return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
         } catch (e) {
             if (e instanceof DpidResolverError) {
                 const errPayload = {
@@ -223,75 +341,9 @@ export const resolveGenericHandler = async (
                 const statusCode = e.name === "DpidNotFound" ? 404 : 500;
                 return res.status(statusCode).send(errPayload);
             }
-            throw e;
+            logger.error({ dpid, error: e }, "Failed to prepare RO-Crate metadata");
+            return res.status(500).send({ error: "Could not get manifest", details: (e as Error).message, ...baseError });
         }
-        const transformer = new RoCrateTransformer();
-
-        const manifest = await getManifest(cid);
-        if (!manifest) {
-            return res.status(500).send({ error: "Could not get manifest", cid });
-        }
-
-        // Get the publication timestamp from the version history
-        // Use the requested version's timestamp, or the first version if not specified
-        let datePublished: number | undefined;
-        if (resolveResult.versions && resolveResult.versions.length > 0) {
-            // If a specific version was requested, use that version's time
-            // Otherwise use the first (oldest) version's time as the publication date
-            const targetVersionIdx = versionIx ?? 0;
-            const targetVersion = resolveResult.versions[targetVersionIdx] ?? resolveResult.versions[0];
-            datePublished = targetVersion?.time;
-        }
-
-        // Fetch file sizes from IPFS for FAIR R1-01M-2 compliance
-        // This provides contentSize metadata for each data file
-        let fileSizes: Record<string, number> = {};
-        try {
-            const rootComponent = manifest.components.find(c => c.name === 'root');
-            if (rootComponent?.payload?.cid) {
-                const ipfsTree = await getIpfsFolderTreeByCid(rootComponent.payload.cid, {
-                    rootName: 'root',
-                    concurrency: 4,
-                    depth: 'full',
-                });
-                // Build a map of CID -> size from the IPFS tree
-                const collectSizes = (entry: typeof ipfsTree) => {
-                    if (entry.size) {
-                        fileSizes[entry.cid] = entry.size;
-                        fileSizes[entry.name] = entry.size;
-                    }
-                    entry.children?.forEach(collectSizes);
-                };
-                collectSizes(ipfsTree);
-                logger.info({ dpid, fileCount: Object.keys(fileSizes).length }, "Collected file sizes from IPFS");
-            }
-        } catch (e) {
-            logger.warn({ dpid, error: e }, "Failed to fetch file sizes from IPFS, continuing without them");
-        }
-
-        // Fetch AI keywords if manifest has no keywords
-        let aiKeywords: string[] = [];
-        if (!manifest.keywords || manifest.keywords.length === 0) {
-            aiKeywords = await fetchAiKeywords(parseInt(dpid));
-            if (aiKeywords.length > 0) {
-                logger.info({ dpid, keywordCount: aiKeywords.length }, "Using AI-generated keywords");
-            }
-        }
-
-        // Export with FAIR-compliant metadata
-        const roCrate = transformer.exportObject(manifest, {
-            dpid: parseInt(dpid),
-            datePublished,
-            publisher: 'DeSci Labs',
-            dpidBaseUrl: baseUrl,
-            fileSizes,
-            aiKeywords,
-        });
-        
-        // Add Signposting headers
-        addSignpostingHeaders(res, manifest);
-        
-        return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
     }
 
     if (isMyst) {
@@ -435,100 +487,47 @@ export const resolveGenericHandler = async (
     // Best practice per https://signposting.org/FAIR/
     if (!isRaw && !suffix && isCrawlerOrAssessment) {
         logger.info({ dpid, userAgent }, "serving FAIR landing page for crawler/assessment tool");
-        
-        try {
-            const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
-            const manifest = await getManifest(resolveResult.manifest);
-            
-            if (manifest) {
-                const transformer = new RoCrateTransformer();
-                
-                // Get the publication timestamp
-                let datePublished: number | undefined;
-                if (resolveResult.versions && resolveResult.versions.length > 0) {
-                    const targetVersionIdx = versionIx ?? 0;
-                    const targetVersion = resolveResult.versions[targetVersionIdx] ?? resolveResult.versions[0];
-                    datePublished = targetVersion?.time;
-                }
-                
-                // Fetch file sizes from IPFS for FAIR R1-01M-2 compliance
-                let fileSizes: Record<string, number> = {};
-                try {
-                    const rootComponent = manifest.components.find(c => c.name === 'root');
-                    if (rootComponent?.payload?.cid) {
-                        const ipfsTree = await getIpfsFolderTreeByCid(rootComponent.payload.cid, {
-                            rootName: 'root',
-                            concurrency: 4,
-                            depth: 'full',
-                        });
-                        const collectSizes = (entry: typeof ipfsTree) => {
-                            if (entry.size) {
-                                fileSizes[entry.cid] = entry.size;
-                                fileSizes[entry.name] = entry.size;
-                            }
-                            entry.children?.forEach(collectSizes);
-                        };
-                        collectSizes(ipfsTree);
-                    }
-                } catch (e) {
-                    logger.warn({ dpid, error: e }, "Failed to fetch file sizes for landing page");
-                }
 
-                // Fetch AI keywords if manifest has no keywords
-                let aiKeywords: string[] = [];
-                if (!manifest.keywords || manifest.keywords.length === 0) {
-                    aiKeywords = await fetchAiKeywords(parseInt(dpid));
-                    if (aiKeywords.length > 0) {
-                        logger.info({ dpid, keywordCount: aiKeywords.length }, "Using AI-generated keywords for landing page");
-                    }
-                }
-                
-                const roCrate = transformer.exportObject(manifest, {
-                    dpid: parseInt(dpid),
-                    datePublished,
-                    publisher: 'DeSci Labs',
-                    dpidBaseUrl: baseUrl,
-                    fileSizes,
-                    aiKeywords,
-                });
-                
-                // Add Signposting HTTP headers
-                addSignpostingHeaders(res, manifest);
-                
-                const nodesUrl = `${NODES_URL}/dpid/${dpid}`;
-                const licenseUrl = LICENSES_TO_URL[manifest.defaultLicense || ''] || manifest.defaultLicense || '';
-                const identifier = `dpid://${dpid}`;
-                
-                // HTML with embedded JSON-LD for F4.1 (search engine compatibility)
-                // and Signposting <link> elements for tools that parse HTML
-                // Note: NO meta refresh for crawlers/assessment tools - they need to read the embedded JSON-LD
-                // Note: Must have >150 chars of visible text to avoid "JavaScript generated" detection
-                const authorNames = manifest.authors?.map(a => a.name).join(', ') || '';
-                const fullDescription = manifest.description || 'Research Object published on DeSci Labs. This is a decentralized persistent identifier (dPID) managed by DeSci Labs for open science publishing.';
-                const html = `<!DOCTYPE html>
+        try {
+            const { roCrate, manifest } = await prepareRoCrateMetadata(parseInt(dpid), versionIx, baseUrl);
+
+            addSignpostingHeaders(res, manifest);
+
+            let nodesUrl = `${NODES_URL}/dpid/${dpid}`;
+            if (versionIx !== undefined) {
+                nodesUrl += `/v${versionIx + 1}`;
+            }
+            const licenseUrl = LICENSES_TO_URL[manifest.defaultLicense || ""] || manifest.defaultLicense || "";
+            const identifier = `dpid://${dpid}`;
+
+            const authorNames = escapeHtml(manifest.authors?.map((a) => a.name).join(", ") || "");
+            const fullDescription =
+                manifest.description ||
+                "Research Object published on DeSci Labs. This is a decentralized persistent identifier (dPID) managed by DeSci Labs for open science publishing.";
+            const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>${manifest.title || `dPID ${dpid}`}</title>
-    <meta name="description" content="${fullDescription.replace(/"/g, '&quot;').substring(0, 300)}">
+    <title>${escapeHtml(manifest.title || `dPID ${dpid}`)}</title>
+    <meta name="description" content="${escapeHtml(fullDescription.substring(0, 300))}">
     <meta name="keywords" content="research, dataset, open science, FAIR, dpid, persistent identifier">
     <meta name="author" content="${authorNames}">
     <meta name="publisher" content="DeSci Labs">
     <link rel="canonical" href="${dpidUrl}">
     <link rel="describedby" type="application/ld+json" href="${jsonldUrl}">
     <link rel="cite-as" href="${dpidUrl}">
-    ${licenseUrl.startsWith('http') ? `<link rel="license" href="${licenseUrl}">` : ''}
-    <script type="application/ld+json">${JSON.stringify(roCrate)}</script>
+    ${licenseUrl.startsWith("http") ? `<link rel="license" href="${licenseUrl}">` : ""}
+    <script type="application/ld+json">${JSON.stringify(roCrate).replace(/</g, "\\u003c")}</script>
 </head>
 <body>
     <article itemscope itemtype="https://schema.org/Dataset">
         <header>
-            <h1 itemprop="name">${manifest.title || `dPID ${dpid}`}</h1>
+            <h1 itemprop="name">${escapeHtml(manifest.title || `dPID ${dpid}`)}</h1>
             <p itemprop="identifier">Persistent Identifier: <a href="${dpidUrl}" itemprop="url">${identifier || dpidUrl}</a></p>
         </header>
         <section>
             <h2>Description</h2>
-            <p itemprop="description">${fullDescription}</p>
+            <p itemprop="description">${escapeHtml(fullDescription)}</p>
         </section>
         <section>
             <h2>Metadata</h2>
@@ -537,9 +536,9 @@ export const resolveGenericHandler = async (
                 <dd itemprop="publisher" itemscope itemtype="https://schema.org/Organization">
                     <span itemprop="name">DeSci Labs</span>
                 </dd>
-                ${authorNames ? `<dt>Authors</dt><dd itemprop="creator">${authorNames}</dd>` : ''}
+                ${authorNames ? `<dt>Authors</dt><dd itemprop="creator">${authorNames}</dd>` : ""}
                 <dt>License</dt>
-                <dd><a href="${licenseUrl}" itemprop="license">${manifest.defaultLicense || 'See license'}</a></dd>
+                <dd><a href="${licenseUrl}" itemprop="license">${escapeHtml(manifest.defaultLicense || "See license")}</a></dd>
                 <dt>Type</dt>
                 <dd>Dataset / Research Object</dd>
                 <dt>Access</dt>
@@ -553,12 +552,10 @@ export const resolveGenericHandler = async (
     </article>
 </body>
 </html>`;
-                
-                return res.setHeader("Content-Type", "text/html; charset=utf-8").send(html);
-            }
+
+            return res.setHeader("Content-Type", "text/html; charset=utf-8").send(html);
         } catch (e) {
             logger.warn({ dpid, error: e }, "Failed to generate FAIR landing page, falling back to redirect");
-            // Fall through to normal redirect
         }
     }
 
