@@ -1,4 +1,4 @@
-import { pino } from "pino";
+import { pino, stdSerializers } from "pino";
 import dotenv from "dotenv";
 dotenv.config();
 const logLevel = process.env.PINO_LOG_LEVEL || "trace";
@@ -46,4 +46,4 @@ function omitBuffer(array: any) {
     });
 }
 
-export const serializeError = (e: Error) => pino.stdSerializers.err(e);
+export const serializeError = (e: Error) => stdSerializers.err(e);
