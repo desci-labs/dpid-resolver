@@ -31,10 +31,7 @@ const NODES_URL = getNodesUrl();
 const fetchAiKeywords = async (dpid: number): Promise<string[]> => {
     try {
         const nodesApiUrl = getNodesApiUrl();
-        const response = await axios.get(
-            `${nodesApiUrl}/v1/search/library/${dpid}`,
-            { timeout: 5000 }
-        );
+        const response = await axios.get(`${nodesApiUrl}/v1/search/library/${dpid}`, { timeout: 5000 });
         const concepts = response.data?.data?.concepts;
         if (concepts && Array.isArray(concepts)) {
             return concepts.map((c: { display_name: string }) => c.display_name);
@@ -78,11 +75,7 @@ const flattenIpfsFolder = (ipfsFolder: IpfsEntryWithGateway): Array<IpfsEntryWit
 };
 
 const escapeHtml = (s: string) =>
-    s.replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 const fetchFileSizes = async (manifest: ResearchObjectV1, dpid: number): Promise<Record<string, number>> => {
     const rootComponent = manifest.components.find((c) => c.name === "root");
@@ -211,8 +204,7 @@ export const resolveGenericHandler = async (
 
     // Content negotiation: check Accept header for JSON-LD, RDF, or Turtle formats (F-UJI uses these)
     const wantsJsonLdViaHeader =
-        acceptHeader.includes("application/ld+json") ||
-        acceptHeader.includes("application/json-ld");
+        acceptHeader.includes("application/ld+json") || acceptHeader.includes("application/json-ld");
     const wantsRdfViaHeader =
         acceptHeader.includes("text/turtle") ||
         acceptHeader.includes("application/rdf+xml") ||
@@ -257,11 +249,11 @@ export const resolveGenericHandler = async (
         }
     }
 
-    // Build base URLs for Signposting headers
+    // Build base URLs for Signposting headers (version-aware)
     const baseUrl = `${req.protocol}://${req.get("host")}`;
-    const dpidUrl = `${baseUrl}/${dpid}`;
+    const dpidUrl = versionIx !== undefined ? `${baseUrl}/${dpid}/v${versionIx + 1}` : `${baseUrl}/${dpid}`;
     const jsonldUrl = `${dpidUrl}?format=jsonld`;
-    
+
     // Add Signposting Link headers for FAIR compliance (F4.1)
     // https://signposting.org/FAIR/
     const addSignpostingHeaders = (response: Response, manifest?: ResearchObjectV1) => {
@@ -305,23 +297,19 @@ export const resolveGenericHandler = async (
 
         const existingLink = response.getHeader("Link");
         const existingLinks: string[] =
-            typeof existingLink === "string"
-                ? [existingLink]
-                : Array.isArray(existingLink)
-                  ? existingLink
-                  : [];
+            typeof existingLink === "string" ? [existingLink] : Array.isArray(existingLink) ? existingLink : [];
         response.setHeader("Link", [...existingLinks, ...linkHeaders].join(", "));
     };
 
-    // License URL mapping (duplicated from RoCrateTransformer for header generation)
-    const LICENSES_TO_URL: { [k: string]: string } = {
-        'CC-BY-4.0': 'https://creativecommons.org/licenses/by/4.0/',
-        'CC-BY-SA-4.0': 'https://creativecommons.org/licenses/by-sa/4.0/',
-        'CC-BY-3.0': 'https://creativecommons.org/licenses/by/3.0/',
-        'CC0-1.0': 'https://creativecommons.org/publicdomain/zero/1.0/',
-        'MIT': 'https://opensource.org/licenses/MIT',
-        'GPL-3.0': 'https://www.gnu.org/licenses/gpl-3.0.en.html',
-        'Apache-2.0': 'https://www.apache.org/licenses/LICENSE-2.0',
+    // TODO: Import LICENSES_TO_URL from @desci-labs/desci-models once RoCrateTransformer exports it
+    const LICENSES_TO_URL: Record<string, string> = {
+        "CC-BY-4.0": "https://creativecommons.org/licenses/by/4.0/",
+        "CC-BY-SA-4.0": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "CC-BY-3.0": "https://creativecommons.org/licenses/by/3.0/",
+        "CC0-1.0": "https://creativecommons.org/publicdomain/zero/1.0/",
+        MIT: "https://opensource.org/licenses/MIT",
+        "GPL-3.0": "https://www.gnu.org/licenses/gpl-3.0.en.html",
+        "Apache-2.0": "https://www.apache.org/licenses/LICENSE-2.0",
     };
 
     if (isJsonld) {
@@ -342,7 +330,9 @@ export const resolveGenericHandler = async (
                 return res.status(statusCode).send(errPayload);
             }
             logger.error({ dpid, error: e }, "Failed to prepare RO-Crate metadata");
-            return res.status(500).send({ error: "Could not get manifest", details: (e as Error).message, ...baseError });
+            return res
+                .status(500)
+                .send({ error: "Could not get manifest", details: (e as Error).message, ...baseError });
         }
     }
 
@@ -469,17 +459,17 @@ export const resolveGenericHandler = async (
     // Check if this is a request from a crawler or FAIR assessment tool
     // These tools need a 200 response with Signposting headers (not a redirect)
     // so they can discover and follow the rel="describedby" link to get metadata
-    const userAgent = req.headers["user-agent"] || "";
-    const isCrawlerOrAssessment = 
-        userAgent.includes("F-UJI") || 
-        userAgent.includes("Googlebot") || 
+    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+    const isCrawlerOrAssessment =
+        userAgent.includes("f-uji") ||
+        userAgent.includes("googlebot") ||
         userAgent.includes("bingbot") ||
-        userAgent.includes("Slurp") ||
-        userAgent.includes("DuckDuckBot") ||
+        userAgent.includes("slurp") ||
+        userAgent.includes("duckduckbot") ||
         userAgent.includes("facebookexternalhit") ||
-        userAgent.includes("LinkedInBot") ||
-        userAgent.includes("Twitterbot") ||
-        userAgent.includes("Semanticbot");
+        userAgent.includes("linkedinbot") ||
+        userAgent.includes("twitterbot") ||
+        userAgent.includes("semanticbot");
 
     // For crawlers/assessment tools: Return a landing page with:
     // 1. Signposting HTTP Link headers (for tools that follow links)
@@ -516,7 +506,7 @@ export const resolveGenericHandler = async (
     <link rel="canonical" href="${dpidUrl}">
     <link rel="describedby" type="application/ld+json" href="${jsonldUrl}">
     <link rel="cite-as" href="${dpidUrl}">
-    ${licenseUrl.startsWith("http") ? `<link rel="license" href="${licenseUrl}">` : ""}
+    ${licenseUrl.startsWith("http") ? `<link rel="license" href="${encodeURI(licenseUrl)}">` : ""}
     <script type="application/ld+json">${JSON.stringify(roCrate).replace(/</g, "\\u003c")}</script>
 </head>
 <body>
@@ -538,7 +528,7 @@ export const resolveGenericHandler = async (
                 </dd>
                 ${authorNames ? `<dt>Authors</dt><dd itemprop="creator">${authorNames}</dd>` : ""}
                 <dt>License</dt>
-                <dd><a href="${licenseUrl}" itemprop="license">${escapeHtml(manifest.defaultLicense || "See license")}</a></dd>
+                <dd>${licenseUrl.startsWith("http") ? `<a href="${encodeURI(licenseUrl)}" itemprop="license">${escapeHtml(manifest.defaultLicense || "See license")}</a>` : `<span itemprop="license">${escapeHtml(manifest.defaultLicense || "See license")}</span>`}</dd>
                 <dt>Type</dt>
                 <dd>Dataset / Research Object</dd>
                 <dt>Access</dt>
