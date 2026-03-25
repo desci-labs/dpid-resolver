@@ -9,14 +9,14 @@ importers:
   .:
     dependencies:
       '@desci-labs/desci-codex-lib':
-        specifier: ^2.0.0-rc8
-        version: 2.0.0-rc8(@polkadot/util@7.9.2)(encoding@0.1.13)(typescript@5.9.3)
+        specifier: ^2.0.0-rc9
+        version: 2.0.0-rc9(@polkadot/util@7.9.2)(encoding@0.1.13)(typescript@5.9.3)
       '@desci-labs/desci-contracts':
         specifier: ^0.2.7
         version: 0.2.7
       '@desci-labs/desci-models':
-        specifier: file:../nodes/desci-models
-        version: file:../nodes/desci-models(web-streams-polyfill@3.3.3)
+        specifier: 0.2.29-fair
+        version: 0.2.29-fair(web-streams-polyfill@3.3.3)
       '@sentry/node':
         specifier: ^10.22.0
         version: 10.30.0
@@ -375,8 +375,8 @@ packages:
   '@desci-labs/desci-codex-composedb@2.0.2':
     resolution: {integrity: sha512-AEnWKXFqZFNhdCqyVTHwbdPcvb9+R3sZ6A0X6jAN7iS+J/0MHmv2muTEe1dbDcSZ6SteBTFc8p1wXqangwuegQ==}
 
-  '@desci-labs/desci-codex-lib@2.0.0-rc8':
-    resolution: {integrity: sha512-T3DkkDv2ycK5+BxiAhzl8bpwEdWBu9PPmKNh1gJreF8pMPtqZvX6V2w1JY4ShqqTEne954Ql5T7sRM2k8zd8qA==}
+  '@desci-labs/desci-codex-lib@2.0.0-rc9':
+    resolution: {integrity: sha512-G6Yzg4uqkKszWPhxGMDIA7TCld+EUvR+jw3vjJScvNHG2F3jx+ZAFnRdimlxrNasOz7CwIOlKnx+dJkZNAm2cg==}
 
   '@desci-labs/desci-codex-models@1.0.0-rc3':
     resolution: {integrity: sha512-pvqaIZnyaF0pBDf0pt4PpyFMtSWvvlyds8Mp2auCpvOJzVZ9ZWDnVz6rtGsWkGk91YZwllMr2hVF0YDND/H5Eg==}
@@ -385,8 +385,8 @@ packages:
   '@desci-labs/desci-contracts@0.2.7':
     resolution: {integrity: sha512-T5XhH0qn7z93jb9MlGd68i4mf0tJP+ppfyWKfFBjp+dCUC4GeTMM3Z/6eqaD8QXsBpvRfi+cvb0or3BY47MR2A==}
 
-  '@desci-labs/desci-models@file:../nodes/desci-models':
-    resolution: {directory: ../nodes/desci-models, type: directory}
+  '@desci-labs/desci-models@0.2.29-fair':
+    resolution: {integrity: sha512-+nc/KNlXlaUJmI9a0Fs9rY7uPCpMqhmeG8Ffyg6oZrMB6/5AGYXHNtxnrXKPCp5D2KPxrLEqAhVwrW+EH4+8ag==}
 
   '@didtools/cacao@2.1.0':
     resolution: {integrity: sha512-35gopj+mOmAlA3nHoHiYMvNMXJtbJDJnVpIlCf/Wf/+/x+uG9aIQefXfF35D6JuaTCZ0apabjpT2umL5h3EXcw==}
@@ -3352,6 +3352,7 @@ packages:
 
   json-ptr@3.1.1:
     resolution: {integrity: sha512-SiSJQ805W1sDUCD1+/t1/1BIrveq2Fe9HJqENxZmMCILmrPI7WhS/pePpIOx85v6/H2z1Vy7AI08GV2TzfXocg==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   json-schema-traverse@0.4.1:
     resolution: {integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==}
@@ -3984,6 +3985,7 @@ packages:
   prebuild-install@7.1.3:
     resolution: {integrity: sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug==}
     engines: {node: '>=10'}
+    deprecated: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.
     hasBin: true
 
   prelude-ls@1.2.1:
@@ -4432,6 +4434,7 @@ packages:
   tar@6.2.1:
     resolution: {integrity: sha512-DZ4yORTwrbTj/7MZYq2w+/ZFdI6OZ/f9SFHR+71gIVUZhOQPHzVCLpvRnPgyaMpfWxxk/4ONva3GQSyNIKRv6A==}
     engines: {node: '>=10'}
+    deprecated: Old versions of tar are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
 
   tarn@3.0.2:
     resolution: {integrity: sha512-51LAVKUSZSVfI05vjPESNc5vwqqZpbXCsU+/+wxlOrUjk2SnFTt97v9ZgQrD4YmxYW1Px6w2KjaDitCfkvgxMQ==}
@@ -5750,7 +5753,7 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@desci-labs/desci-codex-lib@2.0.0-rc8(@polkadot/util@7.9.2)(encoding@0.1.13)(typescript@5.9.3)':
+  '@desci-labs/desci-codex-lib@2.0.0-rc9(@polkadot/util@7.9.2)(encoding@0.1.13)(typescript@5.9.3)':
     dependencies:
       '@ceramic-sdk/flight-sql-client': 0.11.0
       '@ceramic-sdk/identifiers': 0.11.0
@@ -5807,7 +5810,7 @@ snapshots:
 
   '@desci-labs/desci-contracts@0.2.7': {}
 
-  '@desci-labs/desci-models@file:../nodes/desci-models(web-streams-polyfill@3.3.3)':
+  '@desci-labs/desci-models@0.2.29-fair(web-streams-polyfill@3.3.3)':
     dependencies:
       jsonld: 8.3.3(web-streams-polyfill@3.3.3)
       schema-dts: 1.1.5
@@ -8013,7 +8016,7 @@ snapshots:
 
   borsh@0.6.0:
     dependencies:
-      bn.js: 5.2.0
+      bn.js: 5.2.2
       bs58: 4.0.1
       text-encoding-utf-8: 1.0.2
 
@@ -8047,7 +8050,7 @@ snapshots:
     dependencies:
       buffer-xor: 1.0.3
       cipher-base: 1.0.7
-      create-hash: 1.1.3
+      create-hash: 1.2.0
       evp_bytestokey: 1.0.3
       inherits: 2.0.4
 
@@ -8089,7 +8092,7 @@ snapshots:
 
   c32check@2.0.0:
     dependencies:
-      '@noble/hashes': 1.1.5
+      '@noble/hashes': 1.8.0
       base-x: 4.0.1
 
   cac@6.7.14: {}
@@ -8286,7 +8289,7 @@ snapshots:
   create-hmac@1.1.6:
     dependencies:
       cipher-base: 1.0.7
-      create-hash: 1.1.3
+      create-hash: 1.2.0
       inherits: 2.0.4
       ripemd160: 2.0.3
       safe-buffer: 5.2.1
