@@ -41,7 +41,7 @@ import https from "https";
  * - Large (50+ req/min): maxSockets=200, consider load balancing
  */
 
-const maxSockets = process.env.HTTP_MAX_SOCKETS ? parseInt(process.env.HTTP_MAX_SOCKETS, 10) : 50;
+const maxSockets = process.env.HTTP_MAX_SOCKETS ? parseInt(process.env.HTTP_MAX_SOCKETS, 10) : 200;
 const maxFreeSockets = process.env.HTTP_MAX_FREE_SOCKETS ? parseInt(process.env.HTTP_MAX_FREE_SOCKETS, 10) : 10;
 const timeout = process.env.HTTP_SOCKET_TIMEOUT ? parseInt(process.env.HTTP_SOCKET_TIMEOUT, 10) : 60000;
 

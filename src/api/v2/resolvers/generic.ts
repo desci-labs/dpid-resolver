@@ -4,14 +4,16 @@ import { RoCrateTransformer, type ResearchObjectV1 } from "@desci-labs/desci-mod
 
 import parentLogger, { serializeError } from "../../../logger.js";
 import analytics, { LogEventType } from "../../../analytics.js";
-import { IPFS_GATEWAY, getNodesUrl } from "../../../util/config.js";
+import { IPFS_GATEWAY, getNodesUrl, getNodesApiUrl, CACHE_TTL_ANCHORED } from "../../../util/config.js";
 import { buildMystPageFromManifest, type IJMetadata } from "../../../util/myst.js";
 import { DpidResolverError, resolveDpid } from "./dpid.js";
 import type { HistoryQueryResult } from "../queries/history.js";
 import { isDpid, isVersionString } from "../../../util/validation.js";
-import { getIpfsFolderTreeByCid, ipfsCat, type EnhancedIpfsEntry } from "../data/getIpfsFolder.js";
+import { getIpfsFolderTreeByCid, ipfsCat, type IpfsEntryWithGateway } from "../data/getIpfsFolder.js";
 import { getManifest } from "../../../util/manifests.js";
 import { httpAgent, httpsAgent } from "../../../util/httpAgent.js";
+import { magicIsUnixFsDir } from "../../../util/ipfs.js";
+import { redisService } from "../../../redis.js";
 
 const MODULE_PATH = "/api/v2/resolvers/generic" as const;
 
@@ -21,6 +23,25 @@ const logger = parentLogger.child({
 
 const IPFS_API_URL = IPFS_GATEWAY.replace(/\/ipfs\/?$/, "/api/v0");
 const NODES_URL = getNodesUrl();
+
+/**
+ * Fetch AI-generated keywords from the nodes API for a given dPID.
+ * Returns an empty array if the fetch fails or no keywords are found.
+ */
+const fetchAiKeywords = async (dpid: number): Promise<string[]> => {
+    try {
+        const nodesApiUrl = getNodesApiUrl();
+        const response = await axios.get(`${nodesApiUrl}/v1/search/library/${dpid}`, { timeout: 5000 });
+        const concepts = response.data?.data?.concepts;
+        if (concepts && Array.isArray(concepts)) {
+            return concepts.map((c: { display_name: string }) => c.display_name);
+        }
+        return [];
+    } catch (e) {
+        logger.warn({ dpid, error: e }, "Failed to fetch AI keywords");
+        return [];
+    }
+};
 
 export type ResolveGenericParams = {
     // This is how express maps a wildcard :shrug:
@@ -49,8 +70,96 @@ export type SuccessResponse =
 
 export type ResolveGenericResponse = SuccessResponse | ErrorResponse;
 
-const flattenIpfsFolder = (ipfsFolder: EnhancedIpfsEntry): Array<EnhancedIpfsEntry> => {
-    return ipfsFolder.children?.flatMap((child: EnhancedIpfsEntry) => [child, ...flattenIpfsFolder(child)]) ?? [];
+const flattenIpfsFolder = (ipfsFolder: IpfsEntryWithGateway): Array<IpfsEntryWithGateway> => {
+    return ipfsFolder.children?.flatMap((child: IpfsEntryWithGateway) => [child, ...flattenIpfsFolder(child)]) ?? [];
+};
+
+const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+const fetchFileSizes = async (manifest: ResearchObjectV1, dpid: number): Promise<Record<string, number>> => {
+    const rootComponent = manifest.components.find((c) => c.name === "root");
+    if (!rootComponent?.payload?.cid) return {};
+
+    const cacheKey = `file-sizes:${rootComponent.payload.cid}`;
+    if (redisService) {
+        try {
+            const cached = await redisService.getFromCache<Record<string, number>>(cacheKey);
+            if (cached) return cached;
+        } catch (e) {
+            logger.warn({ dpid, error: e }, "Failed to read file sizes from cache");
+        }
+    }
+
+    const ipfsTree = await getIpfsFolderTreeByCid(rootComponent.payload.cid, {
+        rootName: "root",
+        concurrency: 4,
+        depth: "full",
+    });
+    const fileSizes: Record<string, number> = {};
+    const collectSizes = (entry: typeof ipfsTree) => {
+        if (entry.size) {
+            fileSizes[entry.cid] = entry.size;
+            fileSizes[entry.name] = entry.size;
+        }
+        entry.children?.forEach(collectSizes);
+    };
+    collectSizes(ipfsTree);
+    logger.info({ dpid, fileCount: Object.keys(fileSizes).length }, "Collected file sizes from IPFS");
+
+    if (redisService) {
+        void redisService.setToCache(cacheKey, fileSizes, CACHE_TTL_ANCHORED).catch((e) => {
+            logger.warn({ dpid, error: e }, "Failed to cache file sizes");
+        });
+    }
+    return fileSizes;
+};
+
+const prepareRoCrateMetadata = async (
+    dpid: number,
+    versionIx: number | undefined,
+    baseUrl: string,
+): Promise<{ roCrate: object; manifest: ResearchObjectV1; resolveResult: HistoryQueryResult }> => {
+    const resolveResult = await resolveDpid(dpid, versionIx);
+    const manifest = await getManifest(resolveResult.manifest);
+    if (!manifest) throw new Error("Could not get manifest");
+
+    let datePublished: number | undefined;
+    if (resolveResult.versions && resolveResult.versions.length > 0) {
+        const targetVersionIdx = versionIx ?? 0;
+        const targetVersion = resolveResult.versions[targetVersionIdx] ?? resolveResult.versions[0];
+        datePublished = targetVersion?.time;
+    }
+
+    let fileSizes: Record<string, number> = {};
+    try {
+        fileSizes = await fetchFileSizes(manifest, dpid);
+    } catch (e) {
+        logger.warn({ dpid, error: e }, "Failed to fetch file sizes from IPFS, continuing without them");
+    }
+
+    let aiKeywords: string[] = [];
+    if (!manifest.keywords || manifest.keywords.length === 0) {
+        aiKeywords = await fetchAiKeywords(dpid);
+        if (aiKeywords.length > 0) {
+            logger.info({ dpid, keywordCount: aiKeywords.length }, "Using AI-generated keywords");
+        }
+    }
+
+    const transformer = new RoCrateTransformer();
+    // Newer desci-models accepts a second metadata arg for FAIR fields;
+    // older versions ignore the extra argument at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roCrate = (transformer as any).exportObject(manifest, {
+        dpid,
+        datePublished,
+        publisher: "DeSci Labs",
+        dpidBaseUrl: baseUrl,
+        fileSizes,
+        aiKeywords,
+    });
+
+    return { roCrate, manifest, resolveResult };
 };
 
 /**
@@ -93,12 +202,31 @@ export const resolveGenericHandler = async (
     const acceptHeader = req.headers.accept || "";
     const isApiRequest = acceptHeader.includes("application/json") && !acceptHeader.includes("text/html");
 
+    // Content negotiation: check Accept header for JSON-LD, RDF, or Turtle formats (F-UJI uses these)
+    const wantsJsonLdViaHeader =
+        acceptHeader.includes("application/ld+json") || acceptHeader.includes("application/json-ld");
+    const wantsRdfViaHeader =
+        acceptHeader.includes("text/turtle") ||
+        acceptHeader.includes("application/rdf+xml") ||
+        acceptHeader.includes("text/n3") ||
+        acceptHeader.includes("text/rdf+n3");
+
+    // Return 406 for RDF formats we don't actually support (Turtle, N3, RDF+XML)
+    // unless the client also accepts JSON-LD, in which case we can serve that.
+    if (wantsRdfViaHeader && !wantsJsonLdViaHeader) {
+        return res.status(406).send({
+            error: "Requested RDF format not supported",
+            details: "Supported formats: application/ld+json, application/json, text/html",
+            ...baseError,
+        });
+    }
+
     const isRaw =
         query.raw !== undefined ||
         query.format === "raw" ||
-        (query.format === undefined && isApiRequest) ||
+        (query.format === undefined && isApiRequest && !wantsJsonLdViaHeader) ||
         query.format === "json";
-    const isJsonld = query.jsonld !== undefined || query.format === "jsonld";
+    const isJsonld = query.jsonld !== undefined || query.format === "jsonld" || wantsJsonLdViaHeader;
     const isMyst = query.format === "myst";
 
     /** dPID version identifier, possibly adjusted to 0-based indexing */
@@ -121,12 +249,75 @@ export const resolveGenericHandler = async (
         }
     }
 
+    // Build base URLs for Signposting headers (version-aware)
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const dpidUrl = versionIx !== undefined ? `${baseUrl}/${dpid}/v${versionIx + 1}` : `${baseUrl}/${dpid}`;
+    const jsonldUrl = `${dpidUrl}?format=jsonld`;
+
+    // Add Signposting Link headers for FAIR compliance (F4.1)
+    // https://signposting.org/FAIR/
+    const addSignpostingHeaders = (response: Response, manifest?: ResearchObjectV1) => {
+        const existingVary = response.getHeader("Vary");
+        const varySet = new Set(
+            (typeof existingVary === "string"
+                ? existingVary
+                : Array.isArray(existingVary)
+                  ? existingVary.join(", ")
+                  : ""
+            )
+                .split(",")
+                .map((v) => v.trim())
+                .filter(Boolean),
+        );
+        varySet.add("Accept");
+        varySet.add("User-Agent");
+        response.setHeader("Vary", [...varySet].join(", "));
+
+        const linkHeaders: string[] = [];
+
+        linkHeaders.push(`<${jsonldUrl}>; rel="describedby"; type="application/ld+json"`);
+        linkHeaders.push(`<${dpidUrl}>; rel="cite-as"`);
+        linkHeaders.push(`<https://w3id.org/ro/crate/1.1>; rel="type"`);
+
+        if (manifest?.defaultLicense) {
+            const licenseUrl = LICENSES_TO_URL[manifest.defaultLicense] || manifest.defaultLicense;
+            if (licenseUrl.startsWith("http")) {
+                linkHeaders.push(`<${licenseUrl}>; rel="license"`);
+            }
+        }
+
+        manifest?.authors?.forEach((author) => {
+            if (author.orcid) {
+                const orcidUrl = author.orcid.startsWith("https://")
+                    ? author.orcid
+                    : `https://orcid.org/${author.orcid}`;
+                linkHeaders.push(`<${orcidUrl}>; rel="author"`);
+            }
+        });
+
+        const existingLink = response.getHeader("Link");
+        const existingLinks: string[] =
+            typeof existingLink === "string" ? [existingLink] : Array.isArray(existingLink) ? existingLink : [];
+        response.setHeader("Link", [...existingLinks, ...linkHeaders].join(", "));
+    };
+
+    // TODO: Import LICENSES_TO_URL from @desci-labs/desci-models once RoCrateTransformer exports it
+    const LICENSES_TO_URL: Record<string, string> = {
+        "CC-BY-4.0": "https://creativecommons.org/licenses/by/4.0/",
+        "CC-BY-SA-4.0": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "CC-BY-3.0": "https://creativecommons.org/licenses/by/3.0/",
+        "CC0-1.0": "https://creativecommons.org/publicdomain/zero/1.0/",
+        MIT: "https://opensource.org/licenses/MIT",
+        "GPL-3.0": "https://www.gnu.org/licenses/gpl-3.0.en.html",
+        "Apache-2.0": "https://www.apache.org/licenses/LICENSE-2.0",
+    };
+
     if (isJsonld) {
         logger.info({ path, query }, "got request for jsonld");
-        let cid: string;
         try {
-            const resolveResult = await resolveDpid(parseInt(dpid), versionIx);
-            cid = resolveResult.manifest;
+            const { roCrate, manifest } = await prepareRoCrateMetadata(parseInt(dpid), versionIx, baseUrl);
+            addSignpostingHeaders(res, manifest);
+            return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
         } catch (e) {
             if (e instanceof DpidResolverError) {
                 const errPayload = {
@@ -135,21 +326,14 @@ export const resolveGenericHandler = async (
                     ...baseError,
                 };
                 logger.error(errPayload, "failed to resolve dpid for jsonld");
-                // Return 404 for DpidNotFound, 500 for other resolver errors
                 const statusCode = e.name === "DpidNotFound" ? 404 : 500;
                 return res.status(statusCode).send(errPayload);
             }
-            throw e; // Re-throw unexpected errors
+            logger.error({ dpid, error: e }, "Failed to prepare RO-Crate metadata");
+            return res
+                .status(500)
+                .send({ error: "Could not get manifest", details: (e as Error).message, ...baseError });
         }
-        const transformer = new RoCrateTransformer();
-
-        const manifest = await getManifest(cid);
-        if (!manifest) {
-            return res.status(500).send({ error: "Could not get manifest", cid });
-        }
-
-        const roCrate = transformer.exportObject(manifest);
-        return res.setHeader("Content-Type", "application/ld+json").send(JSON.stringify(roCrate));
     }
 
     if (isMyst) {
@@ -191,7 +375,10 @@ export const resolveGenericHandler = async (
                 depth: "full",
             });
         } catch (e) {
-            logger.error({ error: serializeError(e as Error), cid: dataBucket.cid }, "Failed to fetch IPFS folder tree");
+            logger.error(
+                { error: serializeError(e as Error), cid: dataBucket.cid },
+                "Failed to fetch IPFS folder tree",
+            );
             return res.status(500).send({
                 error: "Failed to fetch IPFS folder tree",
                 details: serializeError(e as Error),
@@ -201,7 +388,10 @@ export const resolveGenericHandler = async (
 
         let ijMetadata: IJMetadata | undefined;
         try {
-            const tempMetadata = (await ipfsCat(`${dataBucket.cid}/insight-journal-metadata.json`)) as unknown as {
+            const tempMetadata = (await ipfsCat(
+                `${dataBucket.cid}/insight-journal-metadata.json`,
+                true,
+            )) as unknown as {
                 license: string;
                 publication_id: number;
                 revisions: Array<{
@@ -216,7 +406,6 @@ export const resolveGenericHandler = async (
                 tags?: string[];
                 source_code_git_repo?: string;
             };
-            logger.info({ ipfsFolder }, "Temp metadata");
 
             const cover = (manifest.coverImage as string | undefined) ?? undefined;
             ijMetadata = {
@@ -266,6 +455,99 @@ export const resolveGenericHandler = async (
             suffix,
         },
     });
+
+    // Check if this is a request from a crawler or FAIR assessment tool
+    // These tools need a 200 response with Signposting headers (not a redirect)
+    // so they can discover and follow the rel="describedby" link to get metadata
+    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+    const isCrawlerOrAssessment =
+        userAgent.includes("f-uji") ||
+        userAgent.includes("googlebot") ||
+        userAgent.includes("bingbot") ||
+        userAgent.includes("slurp") ||
+        userAgent.includes("duckduckbot") ||
+        userAgent.includes("facebookexternalhit") ||
+        userAgent.includes("linkedinbot") ||
+        userAgent.includes("twitterbot") ||
+        userAgent.includes("semanticbot");
+
+    // For crawlers/assessment tools: Return a landing page with:
+    // 1. Signposting HTTP Link headers (for tools that follow links)
+    // 2. Embedded JSON-LD in HTML (for search engine compatibility - F4.1)
+    // Best practice per https://signposting.org/FAIR/
+    if (!isRaw && !suffix && isCrawlerOrAssessment) {
+        logger.info({ dpid, userAgent }, "serving FAIR landing page for crawler/assessment tool");
+
+        try {
+            const { roCrate, manifest } = await prepareRoCrateMetadata(parseInt(dpid), versionIx, baseUrl);
+
+            addSignpostingHeaders(res, manifest);
+
+            let nodesUrl = `${NODES_URL}/dpid/${dpid}`;
+            if (versionIx !== undefined) {
+                nodesUrl += `/v${versionIx + 1}`;
+            }
+            const licenseUrl = LICENSES_TO_URL[manifest.defaultLicense || ""] || manifest.defaultLicense || "";
+            const identifier = `dpid://${dpid}`;
+
+            const authorNames = escapeHtml(manifest.authors?.map((a) => a.name).join(", ") || "");
+            const fullDescription =
+                manifest.description ||
+                "Research Object published on DeSci Labs. This is a decentralized persistent identifier (dPID) managed by DeSci Labs for open science publishing.";
+            const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>${escapeHtml(manifest.title || `dPID ${dpid}`)}</title>
+    <meta name="description" content="${escapeHtml(fullDescription.substring(0, 300))}">
+    <meta name="keywords" content="research, dataset, open science, FAIR, dpid, persistent identifier">
+    <meta name="author" content="${authorNames}">
+    <meta name="publisher" content="DeSci Labs">
+    <link rel="canonical" href="${dpidUrl}">
+    <link rel="describedby" type="application/ld+json" href="${jsonldUrl}">
+    <link rel="cite-as" href="${dpidUrl}">
+    ${licenseUrl.startsWith("http") ? `<link rel="license" href="${encodeURI(licenseUrl)}">` : ""}
+    <script type="application/ld+json">${JSON.stringify(roCrate).replace(/</g, "\\u003c")}</script>
+</head>
+<body>
+    <article itemscope itemtype="https://schema.org/Dataset">
+        <header>
+            <h1 itemprop="name">${escapeHtml(manifest.title || `dPID ${dpid}`)}</h1>
+            <p itemprop="identifier">Persistent Identifier: <a href="${dpidUrl}" itemprop="url">${identifier || dpidUrl}</a></p>
+        </header>
+        <section>
+            <h2>Description</h2>
+            <p itemprop="description">${escapeHtml(fullDescription)}</p>
+        </section>
+        <section>
+            <h2>Metadata</h2>
+            <dl>
+                <dt>Publisher</dt>
+                <dd itemprop="publisher" itemscope itemtype="https://schema.org/Organization">
+                    <span itemprop="name">DeSci Labs</span>
+                </dd>
+                ${authorNames ? `<dt>Authors</dt><dd itemprop="creator">${authorNames}</dd>` : ""}
+                <dt>License</dt>
+                <dd>${licenseUrl.startsWith("http") ? `<a href="${encodeURI(licenseUrl)}" itemprop="license">${escapeHtml(manifest.defaultLicense || "See license")}</a>` : `<span itemprop="license">${escapeHtml(manifest.defaultLicense || "See license")}</span>`}</dd>
+                <dt>Type</dt>
+                <dd>Dataset / Research Object</dd>
+                <dt>Access</dt>
+                <dd itemprop="isAccessibleForFree">Open Access (Free)</dd>
+            </dl>
+        </section>
+        <footer>
+            <p>This Research Object is published on the <a href="https://desci.com">DeSci Labs</a> platform using decentralized persistent identifiers (dPIDs).</p>
+            <p><a href="${nodesUrl}">View full Research Object on DeSci Nodes</a></p>
+        </footer>
+    </article>
+</body>
+</html>`;
+
+            return res.setHeader("Content-Type", "text/html; charset=utf-8").send(html);
+        } catch (e) {
+            logger.warn({ dpid, error: e }, "Failed to generate FAIR landing page, falling back to redirect");
+        }
+    }
 
     // Redirect non-raw resolution requests to the Nodes gateway
     if (!isRaw) {
@@ -355,7 +637,7 @@ export const resolveGenericHandler = async (
             logger.info({ ipfsData: data }, "IPFS DATA");
 
             // Check for magical UnixFS clues
-            if (magicIsUnixDir(data)) {
+            if (magicIsUnixFsDir(data)) {
                 // It's a dir, respond with the raw IPLD node as JSON
                 return res.status(200).send(data);
             } else {
@@ -398,21 +680,6 @@ const getVersionIndex = (versionString: string): number => {
     logger.info({ versionString, index }, "parsed version string");
     return index;
 };
-
-/**
- * Fun with IPLD/UnixFS part 4512:
- * - UnixFS data follows this protobuf schema: https://github.com/ipfs/specs/blob/main/UNIXFS.md#data-format
- * - Length-delimited protobuf encoding writes each fields as [size,data]
- * - The `Type` field is an enum, which is 8 bits long by default
- * - `Directory` has the enum value `1`
- * - [0x8,0x1] in base64 => CAE
- *
- * Hence, "CAE" obviously says "I'm a directory!"
- */
-const MAGIC_UNIXFS_DIR_FLAG = "CAE";
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const magicIsUnixDir = (mysteriousData: any) => mysteriousData.Data?.["/"]?.bytes === MAGIC_UNIXFS_DIR_FLAG;
 
 const rBucketRefHead = /^(root|data)\/?/;
 

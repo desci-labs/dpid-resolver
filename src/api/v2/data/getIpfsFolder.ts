@@ -6,6 +6,7 @@ import { resolveDpid } from "../resolvers/dpid.js";
 import { redisService } from "../../../redis.js";
 import { getManifest } from "../../../util/manifests.js";
 import { httpAgent, httpsAgent } from "../../../util/httpAgent.js";
+import { hackyTsizeIsDir, isRawCodecCid, magicIsUnixFsDir, type PbLink } from "../../../util/ipfs.js";
 
 const logger = parentLogger.child({ module: "/api/v2/data/getIpfsFolder" });
 
@@ -23,7 +24,6 @@ const PUBLIC_IPFS_GATEWAYS = process.env.PUBLIC_IPFS_GATEWAYS
           "https://dweb.link/ipfs",
           "https://cloudflare-ipfs.com/ipfs",
       ];
-const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] => Directory
 
 // Cache key version history:
 // v2: Initial versioned cache key
@@ -33,6 +33,13 @@ const MAGIC_UNIXFS_DIR_FLAG = "CAE"; // length-delimited protobuf [0x08, 0x01] =
 // v6: Added pub.desci.com fallback and fixed download URLs to use actual gateway that fetched files
 const getKeyForIpfsTree = (cid: string, rootName: string, depthKey: string) =>
     `resolver-v6-${DPID_ENV}-ipfs-tree-${rootName}-${depthKey}-${cid}`;
+
+// Per-CID DAG node cache: avoids redundant IPFS HTTP calls on retries
+const getKeyForDagNode = (cid: string) => `resolver-v6-${DPID_ENV}-dag-node-${cid}`;
+const DAG_NODE_CACHE_TTL = 4 * 60 * 60; // 4 hours
+
+// Singleflight: coalesces concurrent requests for the same tree to prevent worker stacking
+const inflightTrees = new Map<string, Promise<IpfsEntry>>();
 
 export type IpfsEntry = {
     name: string;
@@ -44,17 +51,34 @@ export type IpfsEntry = {
 };
 
 /**
- * Check content existence on public HTTP gateway without downloading the body (HEAD).
- * Returns a minimal DAG-like object to indicate a file node when found.
- * This is a fallback when DAG API is unavailable.
+ * Probe gateways with HEAD requests to find one that can serve a CID, without
+ * downloading the body. Checks DAG API gateways first (via their /ipfs path),
+ * then public HTTP gateways. Returns the gateway base URL on success, using
+ * the DAG API URL for DAG API gateways so downstream consumers get the format
+ * they expect.
  */
-const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
-    for (const gateway of PUBLIC_IPFS_GATEWAYS) {
+const probeGatewayForCid = async (cid: string): Promise<string | undefined> => {
+    // Build probe list: DAG API gateways first (probed via /ipfs, returned as /api/v0),
+    // then public HTTP gateways (probed and returned as-is)
+    const probes: Array<{ probeUrl: string; returnUrl: string }> = [];
+    for (const dagApiUrl of [IPFS_DAG_API_URL, ...IPFS_DAG_API_FALLBACK_URLS]) {
+        probes.push({
+            probeUrl: `${dagApiUrl.replace(/\/api\/v0$/, "/ipfs")}/${cid}`,
+            returnUrl: dagApiUrl,
+        });
+    }
+    for (const publicGw of PUBLIC_IPFS_GATEWAYS) {
+        probes.push({
+            probeUrl: `${publicGw}/${cid}`,
+            returnUrl: publicGw,
+        });
+    }
+
+    for (const { probeUrl, returnUrl } of probes) {
         try {
-            const url = `${gateway}/${cid}`;
             const response = await axios({
                 method: "HEAD",
-                url,
+                url: probeUrl,
                 timeout: 15000,
                 validateStatus: (status) => status === 200 || status === 404,
                 httpAgent,
@@ -62,40 +86,35 @@ const fetchViaPublicHttpGateway = async (cid: string): Promise<unknown> => {
             });
 
             if (response.status === 200) {
-                logger.info(
-                    {
-                        cid,
-                        gateway,
-                        contentType: response.headers["content-type"],
-                        contentLength: response.headers["content-length"],
-                    },
-                    "Content exists on public HTTP gateway (HEAD)",
-                );
-
-                // Return a minimal structure that will be treated as a file (not a directory)
-                // by isUnixFsDirectory (bytes !== MAGIC_UNIXFS_DIR_FLAG)
-                return {
-                    Data: {
-                        "/": {
-                            bytes: "",
-                        },
-                    },
-                    Links: [],
-                };
+                logger.info({ cid, probeUrl, gateway: returnUrl }, "Content found via HEAD probe");
+                return returnUrl;
             }
         } catch (error) {
             const axiosError = error as { response?: { status?: number }; message?: string };
             if (axiosError.response?.status === 404) {
-                logger.debug({ cid, gateway }, "CID not found on this public gateway");
+                logger.debug({ cid, probeUrl }, "CID not found on gateway");
                 continue;
             }
-            logger.debug({ cid, gateway, error: axiosError.message }, "Failed to query public gateway (HEAD)");
+            logger.debug({ cid, probeUrl, error: axiosError.message }, "HEAD probe failed");
         }
     }
-    return null;
+    return undefined;
 };
 
-export const ipfsCat = async (arg: string): Promise<unknown> => {
+/** Get JSON data from IPFS. When used for small files, shouldCache can be used to serve it
+ * from redis
+ */
+export const ipfsCat = async (arg: string, shouldCache: boolean = false): Promise<unknown> => {
+    const cacheKey = `resolver-${DPID_ENV}-cat-${arg}`;
+    if (shouldCache) {
+        const cachedContent = await redisService?.getFromCache(cacheKey);
+        if (cachedContent) {
+            logger.info({ cacheKey }, "Serving ipfsCat from cache");
+            void redisService?.keyBump(cacheKey, CACHE_TTL_ANCHORED);
+            return cachedContent;
+        }
+    }
+
     const url = `${IPFS_GATEWAY.replace(/\/ipfs$/, "")}/api/v0/cat?arg=${encodeURIComponent(arg)}`;
     logger.info({ url }, "Fetching IPFS content via public HTTP gateway");
     const { data } = await axios({
@@ -109,17 +128,33 @@ export const ipfsCat = async (arg: string): Promise<unknown> => {
 
     // Attempt to parse as JSON, throw descriptive error if it fails
     try {
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        if (shouldCache) {
+            void redisService?.setToCache(cacheKey, parsed, CACHE_TTL_ANCHORED);
+        }
+        return parsed;
     } catch (e) {
         const preview = typeof data === "string" ? data.slice(0, 100) : String(data);
         throw new Error(`ipfsCat: expected JSON response but got: "${preview}..."`);
     }
 };
 
-export type EnhancedIpfsEntry = IpfsEntry & { gateway?: string; cid: string; name: string };
+export type IpfsEntryWithGateway = IpfsEntry & {
+    gateway?: string;
+    children?: IpfsEntryWithGateway[] | undefined;
+};
 
 /** Fetch a DAG node via IPFS HTTP API with retry logic and fallback gateway support */
-export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIpfsEntry> => {
+export const fetchDagNode = async (arg: string, retries = 2): Promise<IpfsEntryWithGateway> => {
+    // Check per-CID cache to avoid redundant IPFS fetches on retries
+    const cacheKey = getKeyForDagNode(arg);
+    const cached = await redisService?.getFromCache<IpfsEntryWithGateway>(cacheKey);
+    if (cached) {
+        logger.info({ cacheKey }, "Serving dag node from cache");
+        void redisService?.keyBump(cacheKey, DAG_NODE_CACHE_TTL);
+        return cached;
+    }
+
     const gateways = [IPFS_DAG_API_URL, ...IPFS_DAG_API_FALLBACK_URLS];
     let lastError: unknown;
 
@@ -146,7 +181,9 @@ export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIp
                         "Successfully fetched DAG node from fallback gateway",
                     );
                 }
-                return { ...data, gateway: chosenGateway } as EnhancedIpfsEntry;
+                const result = { ...data, gateway: chosenGateway } as IpfsEntryWithGateway;
+                void redisService?.setToCache(cacheKey, result, DAG_NODE_CACHE_TTL);
+                return result;
             } catch (error) {
                 const axiosError = error as {
                     response?: { status?: number; data?: { Message?: string } };
@@ -210,30 +247,39 @@ export const fetchDagNode = async (arg: string, retries = 2): Promise<EnhancedIp
     const lastErrorTyped = lastError as { response?: { data?: { Message?: string } }; message?: string } | undefined;
     const errorMsg = lastErrorTyped?.response?.data?.Message || lastErrorTyped?.message || "Unknown error";
 
-    logger.debug({ cid: arg }, "All DAG API gateways failed, trying public HTTP gateways");
-    const publicData = await fetchViaPublicHttpGateway(arg);
+    logger.debug({ cid: arg }, "All DAG API gateways failed, probing for content via HEAD");
+    const probeGateway = await probeGatewayForCid(arg);
 
-    if (publicData) {
+    if (probeGateway) {
         logger.info(
             {
                 cid: arg,
-                note: "Content fetched from public IPFS gateway - consider pinning to ipfs.desci.com",
+                gateway: probeGateway,
+                note: "Content found via HEAD probe - consider pinning to ipfs.desci.com",
             },
-            "Using public gateway fallback for missing CID",
+            "Using probed gateway fallback for missing CID",
         );
-        return { ...publicData, gateway: "public" } as EnhancedIpfsEntry;
+        const result: IpfsEntryWithGateway = {
+            name: "",
+            path: "",
+            cid: arg,
+            type: "file",
+            gateway: probeGateway,
+        };
+        void redisService?.setToCache(cacheKey, result, DAG_NODE_CACHE_TTL);
+        return result;
     }
 
     // Content not found anywhere
     throw new Error(`Failed to fetch DAG node ${arg} from all available gateways: ${errorMsg}`);
 };
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const isUnixFsDirectory = (dagNode: any): boolean => dagNode?.Data?.["/"]?.bytes === MAGIC_UNIXFS_DIR_FLAG;
-
 /**
  * Recursively build a folder tree starting from a UnixFS root CID.
  * Limits concurrent DAG fetches to avoid overloading the IPFS gateway.
+ *
+ * Uses singleflight to prevent thundering herd (concurrent requests for the same
+ * tree share one resolution). The full tree is cached on successful completion.
  */
 export const getIpfsFolderTreeByCid = async (
     rootCid: string,
@@ -245,53 +291,74 @@ export const getIpfsFolderTreeByCid = async (
 
     const depthKey = maxDepth === "full" ? "full" : `d${maxDepth}`;
     const cacheKey = getKeyForIpfsTree(rootCid, rootName, depthKey);
-    if (redisService) {
-        try {
-            const cached = await redisService.getFromCache<IpfsEntry>(cacheKey);
-            if (cached !== null) {
-                void redisService.keyBump(cacheKey, CACHE_TTL_ANCHORED).catch((error) => {
-                    logger.warn({ error, key: cacheKey }, "Failed to bump Redis key TTL for ipfs tree");
-                });
-                return cached;
-            }
-        } catch (error) {
-            logger.warn({ error, key: cacheKey }, "Failed to read from Redis cache for ipfs tree");
-        }
+
+    // 1. Check full-tree cache
+    const cached = await redisService?.getFromCache<IpfsEntry>(cacheKey);
+    if (cached) {
+        void redisService?.keyBump(cacheKey, CACHE_TTL_ANCHORED);
+        return cached;
     }
 
+    // 2. Singleflight: if another request is already resolving this exact tree, join it
+    //    instead of spawning a new set of workers (prevents worker stacking on retries)
+    const inflight = inflightTrees.get(cacheKey);
+    if (inflight) {
+        logger.info({ cacheKey, rootCid }, "Joining in-flight tree resolution");
+        return inflight;
+    }
+
+    // 3. Start new resolution and register in singleflight map
+    const promise = resolveIpfsTree(rootCid, rootName, maxConcurrency, maxDepth, cacheKey, true);
+    inflightTrees.set(cacheKey, promise);
+    promise.finally(() => inflightTrees.delete(cacheKey)).catch(() => {});
+    return promise;
+};
+
+/**
+ * Internal: resolve an IPFS tree using concurrent workers.
+ */
+async function resolveIpfsTree(
+    rootCid: string,
+    rootName: string,
+    maxConcurrency: number,
+    maxDepth: number | "full",
+    cacheKey: string,
+    /** hack for detecting dirs by looking for 0 Tsize, which is incorrect in the dag-pb */
+    abuseTsize: boolean = false,
+): Promise<IpfsEntry> {
     const rootDag: any = await fetchDagNode(rootCid);
-    const rootIsDir = isUnixFsDirectory(rootDag);
+    const rootIsDir = magicIsUnixFsDir(rootDag);
     if (!rootIsDir) {
-        const fileEntry: EnhancedIpfsEntry = {
+        const fileEntry: IpfsEntryWithGateway = {
             name: rootName,
             path: rootName,
             cid: rootCid,
             type: "file",
             gateway: rootDag.gateway,
         };
-        if (redisService) {
-            void redisService.setToCache(cacheKey, fileEntry, CACHE_TTL_ANCHORED).catch((error) => {
-                logger.warn({ error, key: cacheKey }, "Failed to set Redis cache for ipfs file entry");
-            });
-        }
+        await redisService?.setToCache(cacheKey, fileEntry, CACHE_TTL_ANCHORED);
         return fileEntry;
     }
 
     const root: IpfsEntry = { name: rootName, path: rootName, cid: rootCid, type: "directory", children: [] };
 
-    type QueueItem = { parent: IpfsEntry; linkName: string; cid: string; path: string; size?: number; depth: number };
+    type QueueItem = {
+        parent: IpfsEntry;
+        linkName: string;
+        cid: string;
+        path: string;
+        size?: number;
+        depth: number;
+        gateway?: string;
+    };
     const queue: QueueItem[] = [];
 
-    const enqueueChildren = (parent: IpfsEntry, dagNode: any, parentPath: string, parentDepth: number) => {
-        const links: Array<{ Name: string; Hash: unknown; Tsize?: number }> = dagNode?.Links ?? [];
+    const enqueueChildren = (parent: IpfsEntryWithGateway, dagNode: any, parentPath: string, parentDepth: number) => {
+        const links: Array<PbLink> = dagNode?.Links ?? [];
+        const dagGateway: string | undefined = dagNode?.gateway;
 
         for (const link of links) {
-            let childCid: string | undefined;
-            if (typeof link.Hash === "string") {
-                childCid = link.Hash;
-            } else if (link.Hash && typeof (link.Hash as any)["/"] === "string") {
-                childCid = (link.Hash as any)["/"] as string;
-            }
+            const childCid = link.Hash["/"];
 
             if (!childCid) {
                 logger.warn({ link }, "Skipping link without valid CID string");
@@ -303,47 +370,80 @@ export const getIpfsFolderTreeByCid = async (
             if (maxDepth !== "full" && childDepth > maxDepth) {
                 continue;
             }
-            queue.push({
-                parent,
-                linkName: link.Name,
-                cid: childCid,
-                path: childPath,
-                size: link.Tsize,
-                depth: childDepth,
-            });
+
+            // Link Tsize seems to often be 0 on dirs but never on files, this skips resolving files at all
+            if (abuseTsize && parentDepth !== 0 && !hackyTsizeIsDir(link)) {
+                parent.children!.push({
+                    name: link.Name,
+                    path: childPath,
+                    cid: link.Hash["/"],
+                    size: link.Tsize,
+                    type: "file",
+                    // WARN: this is only necessarily true for IJ pubs (only ext cids at non-root depths).
+                    // It is not generic, so if you're debugging non-IJ nodes returning wrong URLs - this is it
+                    gateway: "https://pub.desci.com/api/v0",
+                });
+            } else {
+                queue.push({
+                    parent,
+                    linkName: link.Name,
+                    cid: childCid,
+                    path: childPath,
+                    size: link.Tsize,
+                    depth: childDepth,
+                    gateway: dagGateway,
+                });
+            }
         }
     };
 
     enqueueChildren(root, rootDag, root.path, 0);
 
-    let index = 0;
     const workers: Promise<void>[] = [];
     let hasErrors = false;
 
-    const take = (): QueueItem | undefined => (index < queue.length ? queue[index++] : undefined);
+    const take = (): QueueItem | undefined => (queue.length > 0 ? queue.pop() : undefined);
 
     const worker = async () => {
         let item: QueueItem | undefined;
-        // Drain queue; new children may extend queue while iterating
+        // Drain stack; new children may extend it while iterating
         // eslint-disable-next-line no-cond-assign
         while ((item = take()) !== undefined) {
             try {
+                // Raw-codec CIDs are always leaf files; probe for a serving
+                // gateway via HEAD instead of downloading the full content.
+                //
+                // WARN: files over the chunk size are also split into a DAG, so this doesn't necessarily mean it's an entire file.
+                //
+                // INFO: this is uncessesary when enqueueChildren uses hackyTsizeIsDir to identify leaves, as leaves never hit the queue at all
+                // if (isRawCodecCid(item.cid)) {
+                //     const gateway = await probeGatewayForCid(item.cid);
+                //     const fileEntry: EnhancedIpfsEntry = {
+                //         name: item.linkName,
+                //         path: item.path,
+                //         cid: item.cid,
+                //         size: item.size,
+                //         type: "file",
+                //         gateway,
+                //     };
+                //     item.parent.children!.push(fileEntry);
+                //     continue;
+                // }
+
                 const dagNode: any = await fetchDagNode(item.cid);
-                if (isUnixFsDirectory(dagNode)) {
-                    const dirEntry: EnhancedIpfsEntry = {
+                if (magicIsUnixFsDir(dagNode)) {
+                    const dirEntry: IpfsEntryWithGateway = {
                         name: item.linkName,
                         path: item.path,
                         cid: item.cid,
                         type: "directory",
                         children: [],
-                        gateway: (item.parent as EnhancedIpfsEntry).gateway,
+                        gateway: dagNode.gateway,
                     };
                     item.parent.children!.push(dirEntry);
-                    if (maxDepth === "full" || item.depth < maxDepth) {
-                        enqueueChildren(dirEntry, dagNode, item.path, item.depth);
-                    }
+                    enqueueChildren(dirEntry, dagNode, item.path, item.depth);
                 } else {
-                    const fileEntry: EnhancedIpfsEntry = {
+                    const fileEntry: IpfsEntryWithGateway = {
                         name: item.linkName,
                         path: item.path,
                         cid: item.cid,
@@ -365,8 +465,8 @@ export const getIpfsFolderTreeByCid = async (
                 logger.warn(
                     {
                         error: errorMessage,
-                        cid: item?.cid,
-                        path: item?.path,
+                        cid: item.cid,
+                        path: item.path,
                         isMissingContent,
                         status: errorTyped?.response?.status,
                     },
@@ -383,17 +483,16 @@ export const getIpfsFolderTreeByCid = async (
     }
     await Promise.all(workers);
 
-    // Only cache if we successfully fetched all children
-    if (redisService && !hasErrors) {
-        void redisService.setToCache(cacheKey, root, CACHE_TTL_ANCHORED).catch((error) => {
-            logger.warn({ error, key: cacheKey }, "Failed to set Redis cache for ipfs tree");
-        });
-    } else if (hasErrors) {
-        logger.info({ cacheKey, rootCid }, "Skipping cache due to errors fetching some children");
+    // Cache full tree if no errors occurred during resolution.
+    // Await the write so singleflight isn't cleared before cache is set.
+    if (!hasErrors) {
+        await redisService?.setToCache(cacheKey, root, CACHE_TTL_ANCHORED);
+    } else {
+        logger.info({ cacheKey, rootCid }, "Skipping full tree cache due to errors");
     }
 
     return root;
-};
+}
 
 /**
  * Resolve a DPID to its manifest, extract the `root` component's CID, and return the full IPFS tree.

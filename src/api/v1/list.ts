@@ -119,6 +119,6 @@ export const list = async (req: Request, res: Response) => {
     } catch (err) {
         const error = err as Error;
         res.json({ ok: false, error: error.message, path: "/api/v1/dpid" }).status(500);
-        logger.error("ERROR", error.message);
+        logger.error({ err: error }, error.message);
     }
 };
