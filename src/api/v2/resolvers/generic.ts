@@ -647,9 +647,19 @@ export const resolveGenericHandler = async (
             }
         } catch (e) {
             // Doesn't seem it was a validDagUrl
+            // AxiosError contains circular references (request.res.req) that crash
+            // JSON.stringify, so we extract only safe, serializable fields
+            const axiosErr = e as import("axios").AxiosError;
+            const safeDetails = {
+                message: axiosErr.message,
+                code: axiosErr.code,
+                status: axiosErr.response?.status,
+                statusText: axiosErr.response?.statusText,
+                url: axiosErr.config?.url,
+            };
             const errPayload = {
                 error: "Failed to resolve DAG URL; check path and versioning",
-                details: serializeError(e as Error),
+                details: safeDetails,
                 ...baseError,
             };
             logger.error(errPayload, "got invalid DAG URL");
