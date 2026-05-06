@@ -1,5 +1,11 @@
 import type { Request, Response } from "express";
-import { CACHE_TTL_ANCHORED, CACHE_TTL_PENDING, DPID_ENV, getCeramicClient } from "../../../util/config.js";
+import {
+    CACHE_TTL_ANCHORED,
+    CACHE_TTL_HISTORY_FULL,
+    CACHE_TTL_PENDING,
+    DPID_ENV,
+    getCeramicClient,
+} from "../../../util/config.js";
 import { type CeramicClient } from "@desci-labs/desci-codex-lib";
 import parentLogger, { serializeError } from "../../../logger.js";
 import { DpidResolverError, resolveDpid } from "../resolvers/dpid.js";
@@ -160,14 +166,39 @@ const STREAM_LOAD_OPTS = {
 
 const getKeyForCommit = (commit: streams.CommitID) => `resolver-${DPID_ENV}-commit-${commit.toString()}`;
 
+// Full-history cache key — wraps the entire HistoryQueryResult so warm hits skip ceramic.loadStream entirely.
+// NOTE: invalidation is TTL-only (CACHE_TTL_HISTORY_FULL, default 60s). The resolver has no push-invalidation
+// path today; if/when desci-server gains one, this key should be deleted alongside `resolver-${DPID_ENV}-dpid-${dpid}`.
+export const getKeyForHistoryFull = (streamId: string) => `resolver-${DPID_ENV}-history-full-${streamId}`;
+
 export const getCodexHistory = async (streamId: string): Promise<HistoryQueryResult> => {
     const startTime = Date.now();
+
+    // Full-history cache check. Bounded by CACHE_TTL_HISTORY_FULL so publish→visibility staleness stays small.
+    if (redisService) {
+        const fullKey = getKeyForHistoryFull(streamId);
+        const cachedFull = await redisService.getFromCache<HistoryQueryResult>(fullKey);
+        if (cachedFull !== null) {
+            const totalTime = Date.now() - startTime;
+            logger.info(
+                { streamId, totalTime, source: "redis-history-full", cacheHit: true },
+                "getCodexHistory served from full-history cache",
+            );
+            return cachedFull;
+        }
+    }
 
     if (flightClient) {
         try {
             const result = await getStreamHistory(flightClient, streamId);
             const totalTime = Date.now() - startTime;
             logger.info({ streamId, totalTime, source: "flightClient" }, "getCodexHistory completed");
+            if (redisService) {
+                const fullKey = getKeyForHistoryFull(streamId);
+                void redisService.setToCache(fullKey, result, CACHE_TTL_HISTORY_FULL).catch((error) => {
+                    logger.warn({ error, key: fullKey }, "Failed to set full-history Redis cache");
+                });
+            }
             return result;
         } catch (error) {
             logger.warn(
@@ -234,7 +265,7 @@ export const getCodexHistory = async (streamId: string): Promise<HistoryQueryRes
         "getCodexHistory timing breakdown",
     );
 
-    return {
+    const result: HistoryQueryResult = {
         id: streamId,
         // Convert fully qualified EIP155 address to plain hex
         owner: cleanupEip155Address(stream.state.metadata.controllers[0]),
@@ -242,6 +273,15 @@ export const getCodexHistory = async (streamId: string): Promise<HistoryQueryRes
         manifest: stream.content.manifest as string,
         versions,
     };
+
+    if (redisService) {
+        const fullKey = getKeyForHistoryFull(streamId);
+        void redisService.setToCache(fullKey, result, CACHE_TTL_HISTORY_FULL).catch((error) => {
+            logger.warn({ error, key: fullKey }, "Failed to set full-history Redis cache");
+        });
+    }
+
+    return result;
 };
 
 const getFreshVersionInfo = async (ceramic: CeramicClient, commit: streams.CommitID): Promise<HistoryVersion> => {

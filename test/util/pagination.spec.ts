@@ -81,9 +81,7 @@ describe("pagination utilities", () => {
                 includeMetadata: true,
                 metadataFields: ["title", "description", "keywords"],
             });
-            expect(result).toBe(
-                "page=3&size=50&sort=asc&history=true&metadata=true&fields=title,description,keywords",
-            );
+            expect(result).toBe("page=3&size=50&sort=asc&history=true&metadata=true&fields=title,description,keywords");
         });
 
         it("should handle empty metadataFields when metadata is enabled", () => {

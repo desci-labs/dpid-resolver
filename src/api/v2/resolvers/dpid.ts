@@ -93,6 +93,9 @@ export const resolveDpidHandler = async (
         }
     }
 
+    // Cloudflare edge caching — only on success path (errors above remain uncached).
+    // s-maxage=60 caps shared-cache freshness; SWR allows up to 5min stale-while-revalidate.
+    res.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
     return res.json(result);
 };
 
