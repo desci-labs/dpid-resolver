@@ -58,42 +58,6 @@ jobs:
             - uses: prepor/action-aws-iam-authenticator@master
             - run: aws-iam-authenticator version
 
-            - name: Install Kubectl
-              run: |
-                  set -euxo pipefail
-                  echo "using kubectl@$KUBECTL_VERSION"
-                  # -f so an HTTP error page is a hard failure instead of being
-                  # silently saved as (and chmod +x'd into) the kubectl binary.
-                  curl -fsSL -o kubectl "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl"
-                  curl -fsSL -o kubectl.sha256 "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl.sha256"
-                  echo "$(cat kubectl.sha256)  kubectl" > kubectl.sha256sum
-                  sha256sum --check kubectl.sha256sum
-                  rm -f kubectl.sha256 kubectl.sha256sum
-                  chmod +x kubectl
-                  sudo mv kubectl /usr/local/bin/kubectl
-                  kubectl version --client
-
-            - name: Configure kube credentials
-              env:
-                  # Passed through the environment rather than interpolated into
-                  # the script, so a multi-line or empty secret cannot mangle it.
-                  KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
-              run: |
-                  set -euo pipefail
-                  for secret in AWS_ACCOUNT_ID AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY KUBE_CONFIG_DATA; do
-                      if [ -z "${!secret:-}" ]; then
-                          echo "::error title=Missing repository secret::${secret} is empty or unset. Add it under Settings > Secrets and variables > Actions."
-                          exit 1
-                      fi
-                  done
-                  mkdir -p "$HOME/.kube"
-                  printf '%s' "$KUBE_CONFIG_DATA" | base64 --decode > "$HOME/.kube/config"
-                  chmod 600 "$HOME/.kube/config"
-                  if ! kubectl config current-context; then
-                      echo "::error title=Unusable kubeconfig::KUBE_CONFIG_DATA did not base64-decode into a kubeconfig with a current-context. Regenerate it: aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name <cluster>, then store the output of 'base64 -w0 ~/.kube/config'."
-                      exit 1
-                  fi
-
             - name: Check AWS credentials
               run: |
                   set -uo pipefail
@@ -153,12 +117,51 @@ jobs:
                   docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$CONTAINER_IMAGE:latest
                   docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$CONTAINER_IMAGE:${{ steps.image-tag.outputs.tag }}
 
-            # Deliberately placed AFTER the push steps. A stale kubeconfig should
-            # fail the rollout, not the image publication: an image in ECR can be
-            # rolled out by Flux or by hand, whereas failing earlier leaves the
-            # registry frozen. That is exactly what happened between 2026-04-04
-            # and 2026-08-09 - "Install Kubectl" died at step 8, so Build and Push
-            # (steps 10-13) never ran and ECR :latest went four months stale.
+            # Everything Kubernetes-related lives BELOW the push steps on purpose.
+            # A broken kubectl download, an empty KUBE_CONFIG_DATA or an
+            # unreachable cluster should fail the rollout, never the image
+            # publication: an image sitting in ECR can be rolled out by Flux or by
+            # hand, whereas failing earlier leaves the registry frozen. That is
+            # exactly the failure mode of 2026-04-04 to 2026-08-09 - "Install
+            # Kubectl" died at step 8, ahead of Build and Push, so ECR :latest went
+            # four months stale and production kept serving a pre-FAIR resolver.
+            # Only "Check AWS credentials" runs early, because ECR needs it.
+            - name: Install Kubectl
+              run: |
+                  set -euxo pipefail
+                  echo "using kubectl@$KUBECTL_VERSION"
+                  # -f so an HTTP error page is a hard failure instead of being
+                  # silently saved as (and chmod +x'd into) the kubectl binary.
+                  curl -fsSL -o kubectl "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl"
+                  curl -fsSL -o kubectl.sha256 "https://dl.k8s.io/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl.sha256"
+                  echo "$(cat kubectl.sha256)  kubectl" > kubectl.sha256sum
+                  sha256sum --check kubectl.sha256sum
+                  rm -f kubectl.sha256 kubectl.sha256sum
+                  chmod +x kubectl
+                  sudo mv kubectl /usr/local/bin/kubectl
+                  kubectl version --client
+
+            - name: Configure kube credentials
+              env:
+                  # Passed through the environment rather than interpolated into
+                  # the script, so a multi-line or empty secret cannot mangle it.
+                  KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+              run: |
+                  set -euo pipefail
+                  for secret in AWS_ACCOUNT_ID AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY KUBE_CONFIG_DATA; do
+                      if [ -z "${!secret:-}" ]; then
+                          echo "::error title=Missing repository secret::${secret} is empty or unset. Add it under Settings > Secrets and variables > Actions."
+                          exit 1
+                      fi
+                  done
+                  mkdir -p "$HOME/.kube"
+                  printf '%s' "$KUBE_CONFIG_DATA" | base64 --decode > "$HOME/.kube/config"
+                  chmod 600 "$HOME/.kube/config"
+                  if ! kubectl config current-context; then
+                      echo "::error title=Unusable kubeconfig::KUBE_CONFIG_DATA did not base64-decode into a kubeconfig with a current-context. Regenerate it: aws eks update-kubeconfig --region $AWS_DEFAULT_REGION --name <cluster>, then store the output of 'base64 -w0 ~/.kube/config'."
+                      exit 1
+                  fi
+
             - name: Check cluster access
               run: |
                   set -uo pipefail
