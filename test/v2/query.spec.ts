@@ -43,7 +43,12 @@ describe("/api/v2/query", { timeout: 10_000 }, async () => {
             ]),
         });
 
-        it("accepts stream id param", async () => {
+        // Quarantined 2026-08-09: resolving a stream id requires a reachable
+        // Ceramic node, and every public endpoint is down -- ceramic-dev and
+        // ceramic-prod.desci.com both return HTTP 530 (origin unreachable), and
+        // CERAMIC_URL in .env.test points at the former. The in-cluster node the
+        // deployed resolver uses is healthy; only the public hostnames are gone.
+        it.skip("accepts stream id param", async () => {
             await request(app)
                 .get("/api/v2/query/history/kjzl6kcym7w8y95yum398wiv3hydj2qb1xrw95jet4lax3nwio3waeiknsprols")
                 .expect(200)
