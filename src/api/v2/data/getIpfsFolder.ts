@@ -6,6 +6,7 @@ import { resolveDpid } from "../resolvers/dpid.js";
 import { redisService } from "../../../redis.js";
 import { getManifest } from "../../../util/manifests.js";
 import { httpAgent, httpsAgent } from "../../../util/httpAgent.js";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { hackyTsizeIsDir, isRawCodecCid, magicIsUnixFsDir, type PbLink } from "../../../util/ipfs.js";
 
 const logger = parentLogger.child({ module: "/api/v2/data/getIpfsFolder" });
@@ -326,6 +327,7 @@ async function resolveIpfsTree(
     /** hack for detecting dirs by looking for 0 Tsize, which is incorrect in the dag-pb */
     abuseTsize: boolean = false,
 ): Promise<IpfsEntry> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rootDag: any = await fetchDagNode(rootCid);
     const rootIsDir = magicIsUnixFsDir(rootDag);
     if (!rootIsDir) {
@@ -353,6 +355,7 @@ async function resolveIpfsTree(
     };
     const queue: QueueItem[] = [];
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const enqueueChildren = (parent: IpfsEntryWithGateway, dagNode: any, parentPath: string, parentDepth: number) => {
         const links: Array<PbLink> = dagNode?.Links ?? [];
         const dagGateway: string | undefined = dagNode?.gateway;
@@ -430,6 +433,7 @@ async function resolveIpfsTree(
                 //     continue;
                 // }
 
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const dagNode: any = await fetchDagNode(item.cid);
                 if (magicIsUnixFsDir(dagNode)) {
                     const dirEntry: IpfsEntryWithGateway = {

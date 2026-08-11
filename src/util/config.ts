@@ -83,9 +83,16 @@ export const getNodesApiUrl = () => {
 
 const ONE_WEEK = 60 * 60 * 24 * 7;
 const TEN_MINUTES = 60 * 10;
+const ONE_MINUTE = 60;
 
 /** Cache TTL for commits that have been anchored / finalized */
 export const CACHE_TTL_ANCHORED = process.env.CACHE_TTL_ANCHORED ? parseInt(process.env.CACHE_TTL_ANCHORED) : ONE_WEEK;
 
 /** Cache TTL for commits pending anchoring, i.e. hasn't got a timestamp */
 export const CACHE_TTL_PENDING = process.env.CACHE_TTL_PENDING ? parseInt(process.env.CACHE_TTL_PENDING) : TEN_MINUTES;
+
+/** Cache TTL for the full HistoryQueryResult. Short by design: bounds publish→visibility staleness
+ * since the resolver has no push-invalidation today. Matches the Cloudflare s-maxage. */
+export const CACHE_TTL_HISTORY_FULL = process.env.CACHE_TTL_HISTORY_FULL
+    ? parseInt(process.env.CACHE_TTL_HISTORY_FULL)
+    : ONE_MINUTE;

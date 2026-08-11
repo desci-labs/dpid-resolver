@@ -21,7 +21,7 @@ type TimeoutResult<T> = { result: T; timedOut: false } | { result: null; timedOu
  * The timeout is properly cleaned up when the main promise resolves to prevent
  * spurious warning logs.
  */
-const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<TimeoutResult<T>> => {
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, dpidNumber: number): Promise<TimeoutResult<T>> => {
     let timeoutHandle: NodeJS.Timeout | null = null;
     let didTimeout = false;
 
